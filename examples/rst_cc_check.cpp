@@ -18,7 +18,7 @@
 int main(int argc, char **argv) {
     ygm::comm world(&argc, &argv);
 
-    ygm::io::line_parser file_reader(world, {"fake_graph2.txt"});
+    ygm::io::line_parser file_reader(world, {"fake_graph.txt"});
     // int num_of_nodes = 4039;
     int num_of_nodes = 21;
     ygm::container::bag<std::pair<int,int>> graph_edges(world);
@@ -100,6 +100,7 @@ int main(int argc, char **argv) {
             // } else {
             //     dset.async_union_and_execute(fake_label_b, fake_label_a, add_spanning_tree_edges_lambda);
             // }
+            // world.barrier();
             dset.async_union_and_execute(edge.first, edge.second, add_spanning_tree_edges_lambda);
         };
 

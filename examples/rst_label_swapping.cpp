@@ -18,9 +18,9 @@
 int main(int argc, char **argv) {
     ygm::comm world(&argc, &argv);
 
-    ygm::io::line_parser file_reader(world, {"fake_graph.txt"});
-    // int num_of_nodes = 4039;
-    int num_of_nodes = 21;
+    ygm::io::line_parser file_reader(world, {"facebook_combined.txt"});
+    int num_of_nodes = 4039;
+    // int num_of_nodes = 21;
     ygm::container::bag<std::pair<int,int>> graph_edges(world);
     std::vector<std::pair<int,int>> edges;
     file_reader.for_all([&graph_edges](const std::string& line) {
@@ -101,16 +101,6 @@ int main(int argc, char **argv) {
         world.barrier();
 
         auto add_spanning_tree_edges_lambda = [](const int u, const int v) {
-            // if (true_labels[u] == 0 && true_labels[v] == 15) {
-            //     std::cout << "Edge (0,15) successfully added" << std::endl;
-            // }
-            // int true_label_a = true_labels[u];
-            // int true_label_b = true_labels[v];
-            // int fake_label_a = fake_labels[true_label_a];
-            // int fake_label_b = fake_labels[true_label_b];
-            // if (fake_label_a != u || fake_label_b != v) {
-            //     std::cout << "INCORRECT LABELS" << std::endl;
-            // }
             local_spanning_tree_edges.push_back(std::make_pair(u, v));
         };
 
@@ -142,9 +132,9 @@ int main(int argc, char **argv) {
         int spanning_tree_size = world.all_reduce_sum(local_spanning_tree_edges.size());
         world.barrier();
 
-        // if (world.rank0()) {
-        //     std::cout << "RST Size: " << spanning_tree_size << std::endl;
-        // }
+        if (world.rank0()) {
+            std::cout << "RST Size: " << spanning_tree_size << std::endl;
+        }
         // Now use counting set to count edge occurrences
         world.barrier();
         int count = 0;
@@ -152,19 +142,12 @@ int main(int argc, char **argv) {
         for (const auto edge : local_spanning_tree_edges) {
             int true_label_a = true_labels[edge.first];
             int true_label_b = true_labels[edge.second];
-            if (true_label_a == 0 && true_label_b == 8) {
-                // world.cout() << "Rank: " << world.rank() << " has edge (0,15), Tree: " << i << std::endl;
-                count += 1;
-            } else if (true_label_a == 8 && true_label_b == 0) {
-                count += 1;
-            }
             std::string edge_str;
             if (true_label_a < true_label_b) {
                 edge_str = std::to_string(true_label_a) + "," + std::to_string(true_label_b);
             } else {
                 edge_str = std::to_string(true_label_b) + "," + std::to_string(true_label_a);
             }
-            // std:: string edge_str = std::to_string(true_label_a) + "," + std::to_string(true_label_b);
             edge_frequency.async_insert(edge_str);
         }
         world.barrier();

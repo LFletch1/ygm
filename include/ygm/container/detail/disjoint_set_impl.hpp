@@ -108,7 +108,27 @@ class disjoint_set_impl {
         if (my_parent == my_item) {
           pdset->local_set_parent(my_item, other_item);
 
+          //--------------Start Experimental Code-----------------//
+          if (orig_a != other_item) {
+            int dest = pdset->owner(orig_a); 
+            pdset->comm().async(
+              dest,
+              [](self_ygm_ptr_type pdset, const value_type &orig_a, const value_type &other_item) {
+                pdset->local_set_parent(orig_a, other_item);
+              }, pdset, orig_a, other_item);
+          }
+          if (orig_b != other_item) {
+            int dest2 = pdset->owner(orig_b); 
+            pdset->comm().async(
+              dest2,
+              [](self_ygm_ptr_type pdset, const value_type &orig_b, const value_type &other_item) {
+                pdset->local_set_parent(orig_b, other_item);
+              }, pdset, orig_b, other_item);
+          }
+          //--------------End Experimental Code-----------------//
+
           // Perform user function after merge
+          // std::cout << "Found root add edge (" << orig_a << "," << orig_b << ")" << std::endl;
           Function *f = nullptr;
           ygm::meta::apply_optional(
               *f, std::make_tuple(pdset),
@@ -125,7 +145,7 @@ class disjoint_set_impl {
         }
         // Keep walking up current branch
         else if (my_parent > other_item) {
-          pdset->local_set_parent(my_item, other_item);  // Splicing
+          // pdset->local_set_parent(my_item, other_item);  // Splicing
           int dest = pdset->owner(my_parent);
           pdset->comm().async(dest, simul_parent_walk_functor(), pdset,
                               my_parent, other_item, orig_a, orig_b, args...);
