@@ -152,7 +152,23 @@ class disjoint_set_impl {
         }
         // Paths converged. Sets were already merged.
         else {
-          return;
+          if (orig_a != other_item) {
+            int dest = pdset->owner(orig_a); 
+            pdset->comm().async(
+              dest,
+              [](self_ygm_ptr_type pdset, const value_type &orig_a, const value_type &other_item) {
+                pdset->local_set_parent(orig_a, other_item);
+              }, pdset, orig_a, other_item);
+          }
+          if (orig_b != other_item) {
+            int dest2 = pdset->owner(orig_b); 
+            pdset->comm().async(
+              dest2,
+              [](self_ygm_ptr_type pdset, const value_type &orig_b, const value_type &other_item) {
+                pdset->local_set_parent(orig_b, other_item);
+              }, pdset, orig_b, other_item);
+          }
+          // return;
         }
       }
     };

@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < trees; i++) { 
         // world.cout0() << "Here" << std::endl;
         world.barrier();
-        // world.cout0() << "Spanning Tree" << std::endl;
+        world.cout0() << "Spanning Tree" << std::endl;
 
         int shift = rand_eng() % num_of_nodes;
         // world.cout() << "Tree: " << i << ", Shift: " << shift << std::endl;
