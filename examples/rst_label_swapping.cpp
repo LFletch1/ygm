@@ -18,15 +18,14 @@
 int main(int argc, char **argv) {
     ygm::comm world(&argc, &argv);
 
-    ygm::io::line_parser file_reader(world, {"soc-sign-epinions-clean.txt"});
-    // int num_of_nodes = 4039;
-    int num_of_nodes = 131828;
+    ygm::io::line_parser file_reader(world, {"musae_ES_edges.csv"});
+    int num_of_nodes = 4648;
     ygm::container::bag<std::pair<int,int>> graph_edges(world);
     std::vector<std::pair<int,int>> edges;
     file_reader.for_all([&graph_edges](const std::string& line) {
         // Line Parsing
         int start = 0;
-        std::string delim = " ";
+        std::string delim = ",";
         int end = line.find(delim);
         std::vector<std::string> split_vec;
         while (end != std::string::npos) {
@@ -57,7 +56,7 @@ int main(int argc, char **argv) {
     world.barrier();
     int bad_trees = 0;
 
-    int trees = 5000;
+    int trees = 100000;
     // Start generating random spanning trees
     for (int i = 0; i < trees; i++) { 
         world.barrier();
