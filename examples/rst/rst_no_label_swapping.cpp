@@ -20,7 +20,6 @@ int main(int argc, char **argv) {
     ygm::io::line_parser file_reader(world, {"facebook_combined.txt"});
     int num_of_nodes = 4039;
     ygm::container::bag<std::pair<int,int>> graph_edges(world);
-    // std::vector<std::pair<int,int>> edges;
     file_reader.for_all([&graph_edges](const std::string& line) {
         // Line Parsing
         int start = 0;
@@ -42,10 +41,10 @@ int main(int argc, char **argv) {
     ygm::container::counting_set<std::string> edge_frequency(world);
     ygm::container::disjoint_set<int> dset(world);
 
-    int trees = 10000;
+    int trees = 1000;
     // Start generating random spanning trees
     for (int i = 0; i < trees; i++) { 
-
+        world.cout0() << "Spanning Tree " << i << std::endl;
         local_spanning_tree_edges.clear();
  
         graph_edges.local_shuffle();

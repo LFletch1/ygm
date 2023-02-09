@@ -193,6 +193,7 @@ int main(int argc, char **argv) {
     world.barrier();
     edge_frequency.for_all(count_lambda);
 
+    world.barrier();
     if (world.rank0()) {
         std::cout << "Total Bad Trees: " << bad_trees << std::endl;
     }

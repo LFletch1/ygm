@@ -17,15 +17,23 @@
 
 int main(int argc, char **argv) {
     ygm::comm world(&argc, &argv);
-
-    ygm::io::line_parser file_reader(world, {"musae_ES_edges.csv"});
-    int num_of_nodes = 4648;
+    // ygm::io::line_parser file_reader(world, {"musae_ES_edges.csv"});
+    // ygm::io::line_parser file_reader(world, {"musae_PTBR_edges.csv"});
+    // ygm::io::line_parser file_reader(world, {"enron-clean.csv"});
+    ygm::io::line_parser file_reader(world, {"US-Grid-Data.txt"});
+    // ygm::io::line_parser file_reader(world, {"facebook_combined.txt"});
+    // int num_of_nodes = 4648;
+    // int num_of_nodes = 36640;
+    // int num_of_nodes = 4039;
+    // int num_of_nodes = 1912;
+    int num_of_nodes = 4942;
+    
     ygm::container::bag<std::pair<int,int>> graph_edges(world);
     std::vector<std::pair<int,int>> edges;
     file_reader.for_all([&graph_edges](const std::string& line) {
         // Line Parsing
         int start = 0;
-        std::string delim = ",";
+        std::string delim = " ";
         int end = line.find(delim);
         std::vector<std::string> split_vec;
         while (end != std::string::npos) {
@@ -56,20 +64,22 @@ int main(int argc, char **argv) {
     world.barrier();
     int bad_trees = 0;
 
+    // Shuffle label vec with same seed
+    std::default_random_engine rand_eng = std::default_random_engine(100);
+
     int trees = 100000;
     // Start generating random spanning trees
     for (int i = 0; i < trees; i++) { 
         world.barrier();
+        world.cout0() << "Spanning Tree " << i << std::endl;
 
         local_spanning_tree_edges.clear();
         world.barrier();
 
-        // Shuffle label vec with same seed
-        std::default_random_engine rand_eng = std::default_random_engine(32);
         // Shuffle lables
         std::shuffle(true_labels.begin(), true_labels.end(), rand_eng);
 
-        // Adjust fake_labels to correlate with true_labels
+        // Adjust fake_labels to match with true_labels
         for (int k = 0; k < true_labels.size(); k++) {
             int true_label = true_labels[k];
             fake_labels[true_label] = k;
@@ -101,9 +111,6 @@ int main(int argc, char **argv) {
         int spanning_tree_size = world.all_reduce_sum(local_spanning_tree_edges.size());
         world.barrier();
 
-        // Now use counting set to count edge occurrences
-        world.barrier();
-        int count = 0;
         for (const auto edge : local_spanning_tree_edges) {
             int true_label_a = true_labels[edge.first];
             int true_label_b = true_labels[edge.second];
@@ -121,14 +128,14 @@ int main(int argc, char **argv) {
     }
 
 
-    auto count_lambda = [&world](const std::pair<std::string,int> edge_count){
+    auto edge_count_lambda = [&world](const std::pair<std::string,int> edge_count){
         // if (edge_count.second == 1000) {
             world.cout() << "(" << edge_count.first << ")" << ": " <<  edge_count.second << std::endl;
         // }
     };
 
     world.barrier();
-    edge_frequency.for_all(count_lambda);
+    edge_frequency.for_all(edge_count_lambda);
 
     return 0;
 }
