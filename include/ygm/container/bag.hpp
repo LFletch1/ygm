@@ -29,7 +29,11 @@ class bag {
 
   void swap(self_type &s) { m_impl.swap(s.m_impl); }
 
-  void local_shuffle() { m_impl.local_shuffle(); }
+  template <typename RandomFunc>
+  void local_shuffle(RandomFunc r) { m_impl.local_shuffle(r); }
+
+  template <typename RandomFunc>
+  void global_shuffle(RandomFunc r) { m_impl.global_shuffle(r); }
 
   template <typename Function>
   void local_for_all(Function fn) {
@@ -42,7 +46,6 @@ class bag {
   void deserialize(const std::string &fname) { m_impl.deserialize(fname); }
   std::vector<value_type> gather_to_vector(int dest) { return m_impl.gather_to_vector(dest); }
   std::vector<value_type> gather_to_vector() { return m_impl.gather_to_vector(); }
-
 
  private:
   detail::bag_impl<value_type> m_impl;

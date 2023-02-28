@@ -7,7 +7,6 @@
 #include <cereal/archives/json.hpp>
 #include <fstream>
 #include <vector>
-#include <algorithm>
 #include <random>
 #include <ygm/comm.hpp>
 #include <ygm/detail/ygm_ptr.hpp>
@@ -52,9 +51,25 @@ class bag_impl {
     m_local_bag.swap(s.m_local_bag);
   }
 
-  void local_shuffle() {
+  template <typename RandomFunc>
+  void local_shuffle(RandomFunc r) {
     m_comm.barrier();
-    std::shuffle(m_local_bag.begin(), m_local_bag.end(), std::default_random_engine(std::random_device()()));
+    std::shuffle(m_local_bag.begin(), m_local_bag.end(), r);
+  }
+
+  template <typename RandomFunc>
+  void global_shuffle(RandomFunc r) {
+    m_comm.barrier();
+    std::vector<value_type> old_local_bag;
+    std::swap(old_local_bag, m_local_bag);
+
+    auto send_item = [](auto bag, const value_type &item) {
+      bag->m_local_bag.push_back(item);
+    }; 
+
+    for (value_type i : old_local_bag) {
+        m_comm.async((r() % m_comm.size()), send_item, pthis, i);
+    }
   }
 
   ygm::comm &comm() { return m_comm; }
