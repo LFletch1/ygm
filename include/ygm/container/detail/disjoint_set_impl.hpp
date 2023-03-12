@@ -629,6 +629,11 @@ class disjoint_set_impl {
     return m_comm.all_reduce_sum(m_local_item_parent_map.size());
   }
 
+  void clear() {
+    m_comm.barrier();
+    m_local_item_parent_map.clear();
+  }
+
   size_t num_sets() {
     /*
   m_comm.barrier();
@@ -678,6 +683,8 @@ class disjoint_set_impl {
     }
     return 0;
   }
+
+
 
   void local_set_parent(const value_type &item, const value_type &parent) {
     m_local_item_parent_map[item].set_parent(parent);

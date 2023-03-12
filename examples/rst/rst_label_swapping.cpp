@@ -20,13 +20,13 @@ int main(int argc, char **argv) {
     // ygm::io::line_parser file_reader(world, {"musae_ES_edges.csv"});
     // ygm::io::line_parser file_reader(world, {"musae_PTBR_edges.csv"});
     // ygm::io::line_parser file_reader(world, {"enron-clean.csv"});
-    ygm::io::line_parser file_reader(world, {"US-Grid-Data.txt"});
-    // ygm::io::line_parser file_reader(world, {"facebook_combined.txt"});
+    // ygm::io::line_parser file_reader(world, {"US-Grid-Data.txt"});
+    ygm::io::line_parser file_reader(world, {"facebook_combined.txt"});
     // int num_of_nodes = 4648;
     // int num_of_nodes = 36640;
-    // int num_of_nodes = 4039;
+    int num_of_nodes = 4039;
     // int num_of_nodes = 1912;
-    int num_of_nodes = 4942;
+    // int num_of_nodes = 4942;
     
     ygm::container::bag<std::pair<int,int>> graph_edges(world);
     std::vector<std::pair<int,int>> edges;
@@ -62,22 +62,26 @@ int main(int argc, char **argv) {
     ygm::container::disjoint_set<int> dset(world);
     
     world.barrier();
-    int bad_trees = 0;
-
     // Shuffle label vec with same seed
-    std::default_random_engine rand_eng = std::default_random_engine(100);
+    std::default_random_engine rng1 = std::default_random_engine(50);
+
+    // Local Shuffle RNG
+    std::default_random_engine rng2 = std::default_random_engine(std::random_device()());
+    
+    // Global Shuffle RNG
+    std::default_random_engine rng3 = std::default_random_engine(std::random_device()());
 
     int trees = 100000;
     // Start generating random spanning trees
     for (int i = 0; i < trees; i++) { 
-        world.barrier();
-        world.cout0() << "Spanning Tree " << i << std::endl;
+        // world.barrier();
+        // world.cout0() << "Spanning Tree " << i << std::endl;
 
         local_spanning_tree_edges.clear();
         world.barrier();
 
         // Shuffle lables
-        std::shuffle(true_labels.begin(), true_labels.end(), rand_eng);
+        std::shuffle(true_labels.begin(), true_labels.end(), rng1);
 
         // Adjust fake_labels to match with true_labels
         for (int k = 0; k < true_labels.size(); k++) {
@@ -86,8 +90,9 @@ int main(int argc, char **argv) {
         }
         world.barrier();
         
-        graph_edges.local_shuffle();
+        graph_edges.local_shuffle(rng2);
         world.barrier();
+        graph_edges.global_shuffle(rng3);
 
         auto add_spanning_tree_edges_lambda = [](const int u, const int v) {
             local_spanning_tree_edges.push_back(std::make_pair(u, v));
@@ -97,11 +102,6 @@ int main(int argc, char **argv) {
             int fake_label_a = fake_labels[edge.first];
             int fake_label_b = fake_labels[edge.second];
             dset.async_union_and_execute(fake_label_a, fake_label_b, add_spanning_tree_edges_lambda);
-            // if (fake_label_a < fake_label_b) {
-            //     dset.async_union_and_execute(fake_label_a, fake_label_b, add_spanning_tree_edges_lambda);
-            // } else {
-            //     dset.async_union_and_execute(fake_label_b, fake_label_a, add_spanning_tree_edges_lambda);
-            // }
         };
 
         // Generate tree
@@ -114,12 +114,7 @@ int main(int argc, char **argv) {
         for (const auto edge : local_spanning_tree_edges) {
             int true_label_a = true_labels[edge.first];
             int true_label_b = true_labels[edge.second];
-            // std::string edge_str;
             std::string edge_str = std::to_string(true_label_a) + "," + std::to_string(true_label_b);
-            // if (true_label_a < true_label_b) {
-            // } else {
-            //     edge_str = std::to_string(true_label_b) + "," + std::to_string(true_label_a);
-            // }
             edge_frequency.async_insert(edge_str);
         }
         world.barrier();
@@ -129,9 +124,7 @@ int main(int argc, char **argv) {
 
 
     auto edge_count_lambda = [&world](const std::pair<std::string,int> edge_count){
-        // if (edge_count.second == 1000) {
-            world.cout() << "(" << edge_count.first << ")" << ": " <<  edge_count.second << std::endl;
-        // }
+        world.cout() << "(" << edge_count.first << ")" << ": " <<  edge_count.second << std::endl;
     };
 
     world.barrier();
