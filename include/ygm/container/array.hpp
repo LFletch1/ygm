@@ -100,6 +100,9 @@ class array {
     m_impl.for_all(fn);
   }
 
+  template <typename RandomEngine>
+  void local_shuffle(ygm::default_random_engine<RandomEngine> &r) { m_impl.local_shuffle(r); }
+
   index_type size() { return m_impl.size(); }
 
   typename ygm::ygm_ptr<impl_type> get_ygm_ptr() const {

@@ -8,6 +8,8 @@
 #include <ygm/comm.hpp>
 #include <ygm/detail/ygm_ptr.hpp>
 #include <ygm/detail/ygm_traits.hpp>
+#include <ygm/random.hpp>
+#include <algorithm>
 
 namespace ygm::container::detail {
 
@@ -153,6 +155,12 @@ class array_impl {
                     "local array lambda must be invocable with (const "
                     "index_type, value_type &) or (value_type &) signatures");
     }
+  }
+
+  template <typename RandomEngine>
+  void local_shuffle(ygm::default_random_engine<RandomEngine> &r) {
+    m_comm.barrier();
+    std::shuffle(m_local_vec.begin(), m_local_vec.end(), r);
   }
 
   index_type size() { return m_global_size; }
