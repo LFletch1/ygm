@@ -174,7 +174,7 @@ class array_impl {
     m_comm.barrier();
 
     // First need to shuffle all the items amongst ranks. Should do this by sending indices
-    std::vector<index_type> index_vec;
+    std::vector<index_type> shuffled_indices;
     auto p_i_vec = m_comm.make_ygm_ptr(shuffled_indices);
     auto send_index = [](auto i_vec, const index_type &i) {
       i_vec->insert(i);
@@ -209,7 +209,6 @@ class array_impl {
     auto send_indices = [](auto i_vec, const std::vector<index_type> &indices) {
       i_vec.insert(i_vec.end(), indices.begin(), indices.end());
     }
-
     std::vector< std::pair<int, size_t> > send_vect;
     int c = 0;
     for (int i = 0; i < m_comm.size(); i++) {
@@ -234,15 +233,15 @@ class array_impl {
     for (auto it: send_vect) {
       std::vector<value_type> indices(it.second);
       for (int i = 0; i < it.second; i++) {
-        send_vals[i] = index_vec.back();
-        index_vec.pop_back();
+        send_vals[i] = shuffled_indices.back();
+        shuffled_indices.pop_back();
       }
-      m_comm.async(it.first, indices)
-      async_insert(send_vals, it.first);
+      m_comm.async(it.first, send_indices, p_i_vec, indices);
     }
     m_comm.barrier();
+    // Now shuffled_indices should be the exact same length as m_local_vec
+    // Need to then visit old array and ask it to send value stored at index
   }
-
 
   index_type size() { return m_global_size; }
 
