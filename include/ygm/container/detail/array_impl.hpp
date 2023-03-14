@@ -180,63 +180,66 @@ class array_impl {
       i_vec->insert(i);
     }
     std::uniform_int_distribution<> distrib(0, m_comm.size()-1);
-    for (index_type i; i < m_local_vec.size(); i++) {
+    for (index_type i = 0; i < m_local_vec.size(); i++) {
       m_comm.async(distrib(r), send_index, p_i_vec, i); 
     }
     
     // Now indices should be randomly distributed amongst all ranks
-
-    size_t lsize = local_size();
+    world.barrier();
+    size_t lsize = index_vec.size();
     size_t* SA = (size_t*)malloc(sizeof(size_t) * m_comm.size());
     MPI_Allgather(&lsize, 1, ygm::detail::mpi_typeof(size_t()),
                   SA, 1, ygm::detail::mpi_typeof(size_t()), 
                   m_comm.get_mpi_comm());
     
-    size_t target = size() / m_comm.size() + (m_comm.rank() < size() % m_comm.size());
-    size_t* TA = (size_t*)malloc(sizeof(size_t) * m_comm.size());
-    MPI_Allgather(&target, 1, ygm::detail::mpi_typeof(size_t()),
-                  TA, 1, ygm::detail::mpi_typeof(size_t()),
-                  m_comm.get_mpi_comm());
-
-    std::vector< std::pair<int, size_t> > send_vect;
+    size_t TA[m_comm.size()];
+    for (int i = 0; i < m_comm.size() - 1; i++) {
+      TA[i] = m_block_size;
+    }
+    index_type last_block_size = m_global_size % m_block_size;
+    if (last_block_size == 0) {
+      last_block_size = m_block_size;
+    }
+    TA[m_comm.size() - 1] = last_block_size;
 
     /* Concurrently iterate through two iterable variables
      *   - c: Cur rank with excess items
      *   - i: Input rank taking items from c
      */
+    auto send_indices = [](auto i_vec, const std::vector<index_type> &indices) {
+      i_vec.insert(i_vec.end(), indices.begin(), indices.end());
+    }
+
+    std::vector< std::pair<int, size_t> > send_vect;
     int c = 0;
     for (int i = 0; i < m_comm.size(); i++) {
       while (SA[i] < TA[i]) { 
         while (SA[c] <= TA[c]) {
           c++; 
         }
-
         size_t i_needed = TA[i] - SA[i];
         size_t c_excess = SA[c] - TA[c];
         size_t transfer_num = std::min(i_needed, c_excess);
-
         if (c == m_comm.rank()) {
           send_vect.push_back(std::make_pair(i, transfer_num));
         }
-
         SA[c] -= transfer_num;
         SA[i] += transfer_num;
       }
-
       // There is no point in calculating anything higher than personal rank
       if (c > m_comm.rank()) {
         break;
       }
     }
-
     for (auto it: send_vect) {
-      std::vector<value_type> send_vals(it.second);
+      std::vector<value_type> indices(it.second);
       for (int i = 0; i < it.second; i++) {
-        send_vals[i] = local_pop();
+        send_vals[i] = index_vec.back();
+        index_vec.pop_back();
       }
+      m_comm.async(it.first, indices)
       async_insert(send_vals, it.first);
     }
-
     m_comm.barrier();
   }
 
