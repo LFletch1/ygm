@@ -9,6 +9,7 @@
 #include <ygm/detail/ygm_ptr.hpp>
 #include <ygm/detail/ygm_traits.hpp>
 #include <ygm/random.hpp>
+#include <random>
 #include <algorithm>
 
 namespace ygm::container::detail {
@@ -157,11 +158,88 @@ class array_impl {
     }
   }
 
-  template <typename RandomEngine>
-  void local_shuffle(ygm::default_random_engine<RandomEngine> &r) {
+  template <typename RandomFunc>
+  void local_shuffle(RandomFunc &r) {
     m_comm.barrier();
     std::shuffle(m_local_vec.begin(), m_local_vec.end(), r);
   }
+
+  void local_shuffle() {
+    ygm::default_random_engine<> r(m_comm, std::random_device()());
+    local_shuffle(r);
+  }
+
+  template <typename RandomFunc>
+  void global_shuffle(RandomFunc &r) {
+    m_comm.barrier();
+
+    // First need to shuffle all the items amongst ranks. Should do this by sending indices
+    std::vector<index_type> index_vec;
+    auto p_i_vec = m_comm.make_ygm_ptr(shuffled_indices);
+    auto send_index = [](auto i_vec, const index_type &i) {
+      i_vec->insert(i);
+    }
+    std::uniform_int_distribution<> distrib(0, m_comm.size()-1);
+    for (index_type i; i < m_local_vec.size(); i++) {
+      m_comm.async(distrib(r), send_index, p_i_vec, i); 
+    }
+    
+    // Now indices should be randomly distributed amongst all ranks
+
+    size_t lsize = local_size();
+    size_t* SA = (size_t*)malloc(sizeof(size_t) * m_comm.size());
+    MPI_Allgather(&lsize, 1, ygm::detail::mpi_typeof(size_t()),
+                  SA, 1, ygm::detail::mpi_typeof(size_t()), 
+                  m_comm.get_mpi_comm());
+    
+    size_t target = size() / m_comm.size() + (m_comm.rank() < size() % m_comm.size());
+    size_t* TA = (size_t*)malloc(sizeof(size_t) * m_comm.size());
+    MPI_Allgather(&target, 1, ygm::detail::mpi_typeof(size_t()),
+                  TA, 1, ygm::detail::mpi_typeof(size_t()),
+                  m_comm.get_mpi_comm());
+
+    std::vector< std::pair<int, size_t> > send_vect;
+
+    /* Concurrently iterate through two iterable variables
+     *   - c: Cur rank with excess items
+     *   - i: Input rank taking items from c
+     */
+    int c = 0;
+    for (int i = 0; i < m_comm.size(); i++) {
+      while (SA[i] < TA[i]) { 
+        while (SA[c] <= TA[c]) {
+          c++; 
+        }
+
+        size_t i_needed = TA[i] - SA[i];
+        size_t c_excess = SA[c] - TA[c];
+        size_t transfer_num = std::min(i_needed, c_excess);
+
+        if (c == m_comm.rank()) {
+          send_vect.push_back(std::make_pair(i, transfer_num));
+        }
+
+        SA[c] -= transfer_num;
+        SA[i] += transfer_num;
+      }
+
+      // There is no point in calculating anything higher than personal rank
+      if (c > m_comm.rank()) {
+        break;
+      }
+    }
+
+    for (auto it: send_vect) {
+      std::vector<value_type> send_vals(it.second);
+      for (int i = 0; i < it.second; i++) {
+        send_vals[i] = local_pop();
+      }
+      async_insert(send_vals, it.first);
+    }
+
+    m_comm.barrier();
+  }
+
 
   index_type size() { return m_global_size; }
 
