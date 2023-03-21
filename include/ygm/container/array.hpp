@@ -100,8 +100,12 @@ class array {
     m_impl.for_all(fn);
   }
 
-  template <typename RandomEngine>
-  void local_shuffle(ygm::default_random_engine<RandomEngine> &r) { m_impl.local_shuffle(r); }
+  template <typename RandomFunc>
+  void local_shuffle(RandomFunc &r) { m_impl.local_shuffle(r); }
+
+  template <typename RandomFunc>
+  void global_shuffle(RandomFunc &r) { m_impl.global_shuffle(r); }
+  void global_shuffle() { m_impl.global_shuffle(); }
 
   index_type size() { return m_impl.size(); }
 

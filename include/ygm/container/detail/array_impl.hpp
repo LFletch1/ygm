@@ -169,24 +169,25 @@ class array_impl {
     local_shuffle(r);
   }
 
+
   template <typename RandomFunc>
   void global_shuffle(RandomFunc &r) {
     m_comm.barrier();
 
-    // First need to shuffle all the items amongst ranks. Should do this by sending indices
+    // First need to shuffle all the indices amongst ranks.
     std::vector<index_type> shuffled_indices;
     auto p_i_vec = m_comm.make_ygm_ptr(shuffled_indices);
     auto send_index = [](auto i_vec, const index_type &i) {
-      i_vec->insert(i);
-    }
+      i_vec->push_back(i);
+    };
     std::uniform_int_distribution<> distrib(0, m_comm.size()-1);
     for (index_type i = 0; i < m_local_vec.size(); i++) {
-      m_comm.async(distrib(r), send_index, p_i_vec, i); 
+      m_comm.async(distrib(r), send_index, p_i_vec, global_index(i)); 
     }
     
-    // Now indices should be randomly distributed amongst all ranks
-    world.barrier();
-    size_t lsize = index_vec.size();
+    // Now need to rebalance distributed indices to maintain block sizes
+    m_comm.barrier();
+    size_t lsize = shuffled_indices.size();
     size_t* SA = (size_t*)malloc(sizeof(size_t) * m_comm.size());
     MPI_Allgather(&lsize, 1, ygm::detail::mpi_typeof(size_t()),
                   SA, 1, ygm::detail::mpi_typeof(size_t()), 
@@ -197,7 +198,7 @@ class array_impl {
       TA[i] = m_block_size;
     }
     index_type last_block_size = m_global_size % m_block_size;
-    if (last_block_size == 0) {
+    if (last_block_size == 0) { 
       last_block_size = m_block_size;
     }
     TA[m_comm.size() - 1] = last_block_size;
@@ -206,9 +207,9 @@ class array_impl {
      *   - c: Cur rank with excess items
      *   - i: Input rank taking items from c
      */
-    auto send_indices = [](auto i_vec, const std::vector<index_type> &indices) {
-      i_vec.insert(i_vec.end(), indices.begin(), indices.end());
-    }
+    auto send_indices = [](auto i_vec, const auto &indices) {
+      i_vec->insert(i_vec->end(), indices.begin(), indices.end());
+    };
     std::vector< std::pair<int, size_t> > send_vect;
     int c = 0;
     for (int i = 0; i < m_comm.size(); i++) {
@@ -233,14 +234,30 @@ class array_impl {
     for (auto it: send_vect) {
       std::vector<value_type> indices(it.second);
       for (int i = 0; i < it.second; i++) {
-        send_vals[i] = shuffled_indices.back();
+        indices[i] = shuffled_indices.back();
         shuffled_indices.pop_back();
       }
       m_comm.async(it.first, send_indices, p_i_vec, indices);
     }
     m_comm.barrier();
     // Now shuffled_indices should be the exact same length as m_local_vec
-    // Need to then visit old array and ask it to send value stored at index
+    // Can no use shuffled indices to decide where to send m_local_vec values
+    std::vector<value_type> new_local_vec(m_local_vec.size());
+    auto new_vec = m_comm.make_ygm_ptr(new_local_vec);
+    auto putter = [](auto parray, auto p_vec, const index_type i, const value_type &v) {
+      index_type l_index = parray->local_index(i);
+      p_vec->at(l_index) = v;
+    };
+    for (int i = 0; i < m_local_vec.size(); i++) {
+      int dest = owner(shuffled_indices[i]);
+      m_comm.async(dest, putter, pthis, new_vec, shuffled_indices[i], m_local_vec[i]);
+    } 
+    std::swap(m_local_vec, new_local_vec); 
+  }
+
+  void global_shuffle() {
+    ygm::default_random_engine<> r(m_comm, std::random_device()());
+    global_shuffle(r);
   }
 
   index_type size() { return m_global_size; }
