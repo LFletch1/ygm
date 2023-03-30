@@ -14,6 +14,7 @@ class array {
   using self_type  = array<Value, Index>;
   using value_type = Value;
   using index_type = Index;
+  using key_type   = Index;
   using impl_type  = detail::array_impl<value_type, index_type>;
 
   array() = delete;
@@ -99,13 +100,26 @@ class array {
     m_impl.for_all(fn);
   }
 
+  template <typename RandomFunc>
+  void local_shuffle(RandomFunc &r) { m_impl.local_shuffle(r); }
+
+  template <typename RandomFunc>
+  void global_shuffle(RandomFunc &r) { m_impl.global_shuffle(r); }
+  void global_shuffle() { m_impl.global_shuffle(); }
+
   index_type size() { return m_impl.size(); }
 
   typename ygm::ygm_ptr<impl_type> get_ygm_ptr() const {
     return m_impl.get_ygm_ptr();
   }
 
+  int owner(const index_type index) const { return m_impl.owner(index); }
+
+  bool is_mine(const index_type index) const { return m_impl.is_mine(index); }
+
   ygm::comm& comm() { return m_impl.comm(); }
+
+  const value_type& default_value() const { return m_impl.default_value(); }
 
  private:
   impl_type m_impl;

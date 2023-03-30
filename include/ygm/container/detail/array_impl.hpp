@@ -7,6 +7,10 @@
 #include <vector>
 #include <ygm/comm.hpp>
 #include <ygm/detail/ygm_ptr.hpp>
+#include <ygm/detail/ygm_traits.hpp>
+#include <ygm/random.hpp>
+#include <random>
+#include <algorithm>
 
 namespace ygm::container::detail {
 
@@ -14,6 +18,7 @@ template <typename Value, typename Index>
 class array_impl {
  public:
   using self_type  = array_impl<Value, Index>;
+  using ptr_type   = typename ygm::ygm_ptr<self_type>;
   using value_type = Value;
   using index_type = Index;
 
@@ -110,8 +115,20 @@ class array_impl {
       ASSERT_RELEASE(l_index < parray->m_local_vec.size());
       value_type &l_value = parray->m_local_vec[l_index];
       Visitor    *vis     = nullptr;
-      ygm::meta::apply_optional(*vis, std::make_tuple(parray),
-                                std::forward_as_tuple(i, l_value, args...));
+      if constexpr (std::is_invocable<decltype(visitor), const index_type &,
+                                      value_type &, VisitorArgs &...>() ||
+                    std::is_invocable<decltype(visitor), ptr_type,
+                                      const index_type &, value_type &,
+                                      VisitorArgs &...>()) {
+        ygm::meta::apply_optional(*vis, std::make_tuple(parray),
+                                  std::forward_as_tuple(i, l_value, args...));
+      } else {
+        static_assert(
+            ygm::detail::always_false<>,
+            "remote array lambda signature must be invocable with (const "
+            "&index_type, value_type&, ...) or (ptr_type, const "
+            "&index_type, value_type&, ...) signatures");
+      }
     };
 
     m_comm.async(dest, visit_wrapper, pthis, index,
@@ -121,10 +138,130 @@ class array_impl {
   template <typename Function>
   void for_all(Function fn) {
     m_comm.barrier();
-    for (int i = 0; i < m_local_vec.size(); ++i) {
-      index_type g_index = global_index(i);
-      fn(g_index, m_local_vec[i]);
+    local_for_all(fn);
+  }
+
+  template <typename Function>
+  void local_for_all(Function fn) {
+    if constexpr (std::is_invocable<decltype(fn), const index_type,
+                                    value_type &>()) {
+      for (int i = 0; i < m_local_vec.size(); ++i) {
+        index_type g_index = global_index(i);
+        fn(g_index, m_local_vec[i]);
+      }
+    } else if constexpr (std::is_invocable<decltype(fn), value_type &>()) {
+      std::for_each(std::begin(m_local_vec), std::end(m_local_vec), fn);
+    } else {
+      static_assert(ygm::detail::always_false<>,
+                    "local array lambda must be invocable with (const "
+                    "index_type, value_type &) or (value_type &) signatures");
     }
+  }
+
+  template <typename RandomFunc>
+  void local_shuffle(RandomFunc &r) {
+    m_comm.barrier();
+    std::shuffle(m_local_vec.begin(), m_local_vec.end(), r);
+  }
+
+  void local_shuffle() {
+    ygm::default_random_engine<> r(m_comm, std::random_device()());
+    local_shuffle(r);
+  }
+
+
+  template <typename RandomFunc>
+  void global_shuffle(RandomFunc &r) {
+    m_comm.barrier();
+
+    // First need to shuffle all the indices amongst ranks.
+    std::vector<index_type> shuffled_indices;
+    auto p_i_vec = m_comm.make_ygm_ptr(shuffled_indices);
+    auto send_index = [](auto i_vec, const index_type &i) {
+      i_vec->push_back(i);
+    };
+    std::uniform_int_distribution<> distrib(0, m_comm.size()-1);
+    for (index_type i = 0; i < m_local_vec.size(); i++) {
+      m_comm.async(distrib(r), send_index, p_i_vec, global_index(i)); 
+    }
+    
+    // Now need to rebalance distributed indices to maintain block sizes
+    m_comm.barrier();
+    size_t lsize = shuffled_indices.size();
+    size_t* SA = (size_t*)malloc(sizeof(size_t) * m_comm.size());
+    MPI_Allgather(&lsize, 1, ygm::detail::mpi_typeof(size_t()),
+                  SA, 1, ygm::detail::mpi_typeof(size_t()), 
+                  m_comm.get_mpi_comm());
+    
+    size_t TA[m_comm.size()];
+    for (int i = 0; i < m_comm.size() - 1; i++) {
+      TA[i] = m_block_size;
+    }
+    index_type last_block_size = m_global_size % m_block_size;
+    if (last_block_size == 0) { 
+      last_block_size = m_block_size;
+    }
+    TA[m_comm.size() - 1] = last_block_size;
+
+    /* Concurrently iterate through two iterable variables
+     *   - c: Cur rank with excess items
+     *   - i: Input rank taking items from c
+     */
+    auto send_indices = [](auto i_vec, const auto &indices) {
+      i_vec->insert(i_vec->end(), indices.begin(), indices.end());
+    };
+    std::vector< std::pair<int, size_t> > send_vect;
+    int c = 0;
+    for (int i = 0; i < m_comm.size(); i++) {
+      while (SA[i] < TA[i]) { 
+        while (SA[c] <= TA[c]) {
+          c++; 
+        }
+        size_t i_needed = TA[i] - SA[i];
+        size_t c_excess = SA[c] - TA[c];
+        size_t transfer_num = std::min(i_needed, c_excess);
+        if (c == m_comm.rank()) {
+          send_vect.push_back(std::make_pair(i, transfer_num));
+        }
+        SA[c] -= transfer_num;
+        SA[i] += transfer_num;
+      }
+      // There is no point in calculating anything higher than personal rank
+      if (c > m_comm.rank()) {
+        break;
+      }
+    }
+    for (auto it: send_vect) {
+      std::vector<value_type> indices(it.second);
+      for (int i = 0; i < it.second; i++) {
+        indices[i] = shuffled_indices.back();
+        shuffled_indices.pop_back();
+      }
+      m_comm.async(it.first, send_indices, p_i_vec, indices);
+    }
+    m_comm.barrier();
+    // Now shuffled_indices should be the exact same length as m_local_vec
+    // Can no use shuffled indices to decide where to send m_local_vec values
+    std::vector<value_type> new_local_vec(m_local_vec.size());
+    auto new_vec = m_comm.make_ygm_ptr(new_local_vec);
+    auto putter = [](auto parray, auto p_vec, const index_type i, const value_type &v) {
+      index_type l_index = parray->local_index(i);
+      p_vec->at(l_index) = v;
+      // (*p_vec)[l_index] = v;
+      // p_vec[l_index] = v;
+    };
+    for (int i = 0; i < m_local_vec.size(); i++) {
+      int dest = owner(shuffled_indices[i]);
+      m_comm.async(dest, putter, pthis, new_vec, shuffled_indices[i], m_local_vec[i]);
+    } 
+    m_comm.barrier();
+    std::swap(m_local_vec, new_local_vec);
+    local_shuffle(r);
+  }
+
+  void global_shuffle() {
+    ygm::default_random_engine<> r(m_comm, std::random_device()());
+    global_shuffle(r);
   }
 
   index_type size() { return m_global_size; }
@@ -133,7 +270,13 @@ class array_impl {
 
   ygm::comm &comm() { return m_comm; }
 
-  int owner(const index_type index) { return index / m_block_size; }
+  const value_type &default_value() const { return m_default_value; }
+
+  int owner(const index_type index) const { return index / m_block_size; }
+
+  bool is_mine(const index_type index) const {
+    return owner(index) == m_comm.rank();
+  }
 
   index_type local_index(const index_type index) {
     return index % m_block_size;
