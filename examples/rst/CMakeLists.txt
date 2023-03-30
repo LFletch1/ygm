@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MIT
 add_ygm_example(random_spanning_trees)
 add_ygm_example(rst_label_swapping)
+add_ygm_example(ygm_label_swapping)
 add_ygm_example(rst_label_hashing)
 add_ygm_example(rst_no_label_swapping)
 add_ygm_example(rst_cc_check)

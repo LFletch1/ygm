@@ -60,16 +60,23 @@ int main(int argc, char **argv) {
     static std::vector<std::pair<int, int>> local_spanning_tree_edges;
     ygm::container::counting_set<std::string> edge_frequency(world);
     ygm::container::disjoint_set<int> dset(world);
+    // ygm::container::array<int,int> true_label(world, num_of_nodes);
     
     world.barrier();
     // Shuffle label vec with same seed
+    int seed = 42;
     std::default_random_engine rng1 = std::default_random_engine(50);
+    // ygm::default_random_engine<> rng1 = ygm::default_random_engine<>(world, seed);
 
     // Local Shuffle RNG
     std::default_random_engine rng2 = std::default_random_engine(std::random_device()());
+    // ygm::default_random_engine<> rng2 = ygm::default_random_engine<>(world, seed);
+    // bbag.local_shuffle(rng1);
     
     // Global Shuffle RNG
     std::default_random_engine rng3 = std::default_random_engine(std::random_device()());
+    // ygm::default_random_engine<> rng3 = ygm::default_random_engine<>(world, seed);
+    // bbag.global_shuffle(rng2);
 
     int trees = 100000;
     // Start generating random spanning trees
@@ -122,9 +129,8 @@ int main(int argc, char **argv) {
         dset.clear();
     }
 
-
-    auto edge_count_lambda = [&world](const std::pair<std::string,int> edge_count){
-        world.cout() << "(" << edge_count.first << ")" << ": " <<  edge_count.second << std::endl;
+    auto edge_count_lambda = [&world](const std::string edge_str, const size_t count){
+        world.cout() << "(" << edge_str << ")" << ": " <<  count << std::endl;
     };
 
     world.barrier();
