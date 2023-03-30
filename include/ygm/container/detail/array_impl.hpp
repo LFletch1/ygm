@@ -247,12 +247,16 @@ class array_impl {
     auto putter = [](auto parray, auto p_vec, const index_type i, const value_type &v) {
       index_type l_index = parray->local_index(i);
       p_vec->at(l_index) = v;
+      // (*p_vec)[l_index] = v;
+      // p_vec[l_index] = v;
     };
     for (int i = 0; i < m_local_vec.size(); i++) {
       int dest = owner(shuffled_indices[i]);
       m_comm.async(dest, putter, pthis, new_vec, shuffled_indices[i], m_local_vec[i]);
     } 
-    std::swap(m_local_vec, new_local_vec); 
+    m_comm.barrier();
+    std::swap(m_local_vec, new_local_vec);
+    local_shuffle(r);
   }
 
   void global_shuffle() {
