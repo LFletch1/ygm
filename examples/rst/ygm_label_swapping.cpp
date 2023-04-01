@@ -130,19 +130,19 @@ int main(int argc, char **argv) {
         //     dset.async_union_and_execute(first_fake_label, value, add_rst_edges); 
         // };
 
-        auto goto_first_label = [&dset, &add_rst_edges](auto arr_ptr, const auto index, const auto value, const int second_label) {
+        auto goto_first_label = [](auto arr_ptr, const auto index, const auto value, const int second_label) {
             std::cout << "Goto first lambda" << std::endl;
             std::cout << "Label " << index << " has the fake label " << value << std::endl; 
-            // std::cout << arr_ptr->size() << std::endl;
-            // auto goto_second_label = [&dset, &add_rst_edges](const auto index, const auto value, const int first_fake_label) {
             auto goto_second_label = [](const auto index, const auto value, const int first_fake_label) {
                 std::cout << "goto second lambda" << std::endl;
-                // dset.async_union_and_execute(first_fake_label, value, add_rst_edges); 
+                std::cout << "Label " << index << " has the fake label " << value << std::endl; 
             };
             arr_ptr->async_visit(second_label, goto_second_label, value);
         };
 
         auto process_edge = [&fake_labels, &goto_first_label](const std::pair<int,int> edge) {
+            // ISSUE: I cannot pass additional arguments to this lambda such as a ygm_ptr to some container.
+            // I cannot pass a ygm_ptr of the dset container with the fake_labels async_visit call
             std::cout << "Process edge lambda" << std::endl;
             fake_labels.async_visit(edge.first, goto_first_label, edge.second);
         };
