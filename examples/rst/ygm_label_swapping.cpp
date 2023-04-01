@@ -84,15 +84,15 @@ int main(int argc, char **argv) {
         true_labels.async_set(value, index);
     };
 
-    auto print_fake_labels = [](const auto index, const auto value){
-        std::cout << "Fake label of node " << index << " is " << value << std::endl;
-    };
+    // auto print_fake_labels = [](const auto index, const auto value){
+    //     std::cout << "Fake label of node " << index << " is " << value << std::endl;
+    // };
 
-    auto print_true_labels = [](const auto index, const auto value){
-        std::cout << "True label of fake labeled node " << index << " is " << value << std::endl;
-    };
+    // auto print_true_labels = [](const auto index, const auto value){
+    //     std::cout << "True label of fake labeled node " << index << " is " << value << std::endl;
+    // };
 
-    int trees = 2;
+    int trees = 1;
     // Start generating random spanning trees
     for (int i = 0; i < trees; i++) { 
 
@@ -103,11 +103,8 @@ int main(int argc, char **argv) {
         fake_labels.global_shuffle(rng1);
         fake_labels.for_all(sync_true_labels);
         world.barrier();
-        fake_labels.for_all(print_fake_labels);
-
-        true_labels.for_all(print_true_labels);
-
-
+        // fake_labels.for_all(print_fake_labels);
+        // true_labels.for_all(print_true_labels);
 
         // Shuffle Edges
         world.barrier(); 
@@ -116,22 +113,47 @@ int main(int argc, char **argv) {
         world.barrier();
         graph_edges.global_shuffle(rng3);
 
-        // auto add_spanning_tree_edges_lambda = [](const int u, const int v) {
-        //     local_spanning_tree_edges.push_back(std::make_pair(u, v));
+        
+        // arr.async_visit(i, [](auto ptr, const auto index, const auto value) {
+        //     ASSERT_RELEASE(value == index);
+        // });
+
+        // auto send_back_labels = [](){
         // };
 
-        // auto process_edge_lambda = [&world, &dset, &add_spanning_tree_edges_lambda](const std::pair<int,int> edge) {
-        //     int fake_label_a = fake_labels[edge.first];
-        //     int fake_label_b = fake_labels[edge.second];
-        //     dset.async_union_and_execute(fake_label_a, fake_label_b, add_spanning_tree_edges_lambda);
+        auto add_rst_edges = [](const int u, const int v) {
+            local_spanning_tree_edges.push_back(std::make_pair(u, v));
+        };
+
+        // auto goto_second_label = [&dset, &add_rst_edges](const auto index, const auto value, const int first_fake_label) {
+        //     std::cout << "Goto second lambda" << std::endl;
+        //     dset.async_union_and_execute(first_fake_label, value, add_rst_edges); 
         // };
 
-        // // Generate tree
-        // world.barrier();
-        // graph_edges.for_all(process_edge_lambda);
-        // world.barrier();
-        // int spanning_tree_size = world.all_reduce_sum(local_spanning_tree_edges.size());
-        // world.barrier();
+        auto goto_first_label = [&dset, &add_rst_edges](auto arr_ptr, const auto index, const auto value, const int second_label) {
+            std::cout << "Goto first lambda" << std::endl;
+            std::cout << "Label " << index << " has the fake label " << value << std::endl; 
+            // std::cout << arr_ptr->size() << std::endl;
+            // auto goto_second_label = [&dset, &add_rst_edges](const auto index, const auto value, const int first_fake_label) {
+            auto goto_second_label = [](const auto index, const auto value, const int first_fake_label) {
+                std::cout << "goto second lambda" << std::endl;
+                // dset.async_union_and_execute(first_fake_label, value, add_rst_edges); 
+            };
+            arr_ptr->async_visit(second_label, goto_second_label, value);
+        };
+
+        auto process_edge = [&fake_labels, &goto_first_label](const std::pair<int,int> edge) {
+            std::cout << "Process edge lambda" << std::endl;
+            fake_labels.async_visit(edge.first, goto_first_label, edge.second);
+        };
+
+        // Generate tree
+        world.barrier();
+        graph_edges.for_all(process_edge);
+        world.barrier();
+        int spanning_tree_size = world.all_reduce_sum(local_spanning_tree_edges.size());
+        world.cout0() << "Spanning Tree Size: " << spanning_tree_size << std::endl;
+        world.barrier();
 
         // for (const auto edge : local_spanning_tree_edges) {
         //     int true_label_a = true_labels[edge.first];

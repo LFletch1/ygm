@@ -8,6 +8,7 @@
 #include <ygm/comm.hpp>
 #include <ygm/container/array.hpp>
 #include <ygm/random.hpp>
+#include <chrono>
 
 int main(int argc, char **argv) {
   ygm::comm world(&argc, &argv);
@@ -15,11 +16,10 @@ int main(int argc, char **argv) {
   // Test async_set
   {
     int ranks = world.size();
-    int elements_per_rank = 10000000;
+    int elements_per_rank = 500000;
     ygm::container::array<int> arr(world, ranks*elements_per_rank);
 
     // if (world.rank0()) {
-
     for (int i = 0; i < elements_per_rank; ++i) {
       int index = i + (world.rank() * elements_per_rank);
       arr.async_set(index, index);
@@ -32,9 +32,14 @@ int main(int argc, char **argv) {
     auto print_values = [&world](const auto index, const auto value) {
       world.cout() << "Index " << index << " contains value: " << value << std::endl;
     };
-
+    auto start = std::chrono::high_resolution_clock::now();
     world.cout0() << "First Global Shuffle" << std::endl;  
     arr.global_shuffle(rng);
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    if (world.rank0()) {
+      std::cout << "Shuffle Time: " << duration.count() << std::endl;
+    }
 
     // arr.for_all( 
     //   [&world](const auto index, const auto value){
