@@ -126,7 +126,7 @@ class bag_impl {
                       "signatures");
       }
     }
-  }
+  } 
 
   std::vector<value_type> gather_to_vector(int dest) {
     std::vector<value_type> result;
