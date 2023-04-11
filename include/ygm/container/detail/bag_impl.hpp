@@ -49,6 +49,10 @@ class bag_impl {
     return m_comm.all_reduce_sum(m_local_bag.size());
   }
 
+  size_t local_size() {
+    return m_local_bag.size();
+  }
+
   void swap(self_type &s) {
     m_comm.barrier();
     m_local_bag.swap(s.m_local_bag);

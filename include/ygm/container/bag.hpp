@@ -44,6 +44,10 @@ class bag {
     m_impl.local_for_all(fn);
   }
 
+  size_t local_size() {
+    return m_impl.local_size();
+  }
+
   ygm::comm &comm() { return m_impl.comm(); }
 
   void serialize(const std::string &fname) { m_impl.serialize(fname); }

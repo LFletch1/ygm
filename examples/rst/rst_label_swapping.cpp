@@ -15,15 +15,6 @@
 #include <algorithm>
 #include <chrono>
 
-// namespace std {
-//     struct hash {
-//         template <class T1, class T2>
-//         std::size_t operator() (const std::pair<T1, T2> &pair) const {
-//             return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
-//         }
-//     };
-// }
-
 namespace std {
 template <>
 struct hash<pair<int,int>> {
@@ -101,28 +92,35 @@ int main(int argc, char **argv) {
         world.barrier();
 
         // Shuffle lables
-        // std::shuffle(true_labels.begin(), true_labels.end(), rng1);
+        std::shuffle(true_labels.begin(), true_labels.end(), rng1);
 
-        // // Adjust fake_labels to match with true_labels
-        // for (int k = 0; k < true_labels.size(); k++) {
-        //     int true_label = true_labels[k];
-        //     fake_labels[true_label] = k;
-        // }
-        // world.barrier();
+        // Adjust fake_labels to match with true_labels
+        for (int k = 0; k < true_labels.size(); k++) {
+            int true_label = true_labels[k];
+            fake_labels[true_label] = k;
+        }
+        world.barrier();
         
-        // graph_edges.local_shuffle(rng2);
-        // graph_edges.global_shuffle(rng3);
+        graph_edges.local_shuffle(rng2);
+        graph_edges.global_shuffle(rng3);
 
         auto add_spanning_tree_edges_lambda = [](const int u, const int v) {
             local_spanning_tree_edges.push_back(std::make_pair(u, v));
         };
 
-        auto process_edge_lambda = [&world, &dset, &add_spanning_tree_edges_lambda](const std::pair<int,int> edge) {
-            // int fake_label_a = fake_labels[edge.first];
-            // int fake_label_b = fake_labels[edge.second];
-            // dset.async_union_and_execute(fake_label_a, fake_label_b, add_spanning_tree_edges_lambda);
+        int edges_processed = 0;
+        auto process_edge_lambda = [&world, &dset, &add_spanning_tree_edges_lambda, &edges_processed](const std::pair<int,int> edge) {
+            int fake_label_a = fake_labels[edge.first];
+            int fake_label_b = fake_labels[edge.second];
+            dset.async_union_and_execute(fake_label_a, fake_label_b, add_spanning_tree_edges_lambda);
             // dset.async_union_and_execute(edge.first, edge.second, add_spanning_tree_edges_lambda);
-            dset.async_union(edge.first, edge.second);
+            // dset.async_union(edge.first, edge.second);
+            edges_processed += 1;
+            if (edges_processed == 10000) {
+                // world.cout0() << "Compressing" << std::endl;
+                dset.all_compress();
+                edges_processed = 0;
+            }
         };
 
         // Generate tree
@@ -130,13 +128,13 @@ int main(int argc, char **argv) {
         world.barrier();
         // int spanning_tree_size = world.all_reduce_sum(local_spanning_tree_edges.size());
 
-        // for (const auto edge : local_spanning_tree_edges) {
-        //     int true_label_a = true_labels[edge.first];
-        //     int true_label_b = true_labels[edge.second];
-        //     // std::string edge_str = std::to_string(true_label_a) + "," + std::to_string(true_label_b);
-        //     edge_frequency.async_insert(std::make_pair(true_label_a,true_label_b));
-        // }
-        // world.barrier();
+        for (const auto edge : local_spanning_tree_edges) {
+            int true_label_a = true_labels[edge.first];
+            int true_label_b = true_labels[edge.second];
+            // std::string edge_str = std::to_string(true_label_a) + "," + std::to_string(true_label_b);
+            edge_frequency.async_insert(std::make_pair(true_label_a,true_label_b));
+        }
+        world.barrier();
 
         dset.clear();
     }
