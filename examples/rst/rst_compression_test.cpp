@@ -32,8 +32,8 @@ int main(int argc, char **argv) {
     // ygm::io::line_parser file_reader(world, {"graphs/facebook_combined.txt"}); // " "
     // int num_of_nodes = 4039;
 
-    ygm::io::line_parser file_reader(world, {"graphs/com-youtube.ungraph.txt"}); // "\t"
-    int num_of_nodes = 1134891;
+    // ygm::io::line_parser file_reader(world, {"graphs/com-youtube.ungraph.txt"}); // "\t"
+    // int num_of_nodes = 1134891;
 
     // ygm::io::line_parser file_reader(world, {"graphs/wiki-topcats.txt"}); // " "
     // int num_of_nodes = 1791489;  
@@ -44,8 +44,8 @@ int main(int argc, char **argv) {
     // ygm::io::line_parser file_reader(world, {"graphs/com-orkut.ungraph.txt"}); // "\t"
     // int num_of_nodes = 3072442;
 
-    // ygm::io::line_parser file_reader(world, {"graphs/as-skitter.txt"}); // "\t"
-    // int num_of_nodes = 1696415;
+    ygm::io::line_parser file_reader(world, {"graphs/as-skitter.txt"}); // "\t"
+    int num_of_nodes = 1696415;
 
     ygm::container::bag<std::pair<int,int>> graph_edges(world);
     std::vector<std::pair<int,int>> edges;
