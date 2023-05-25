@@ -41,11 +41,11 @@ int main(int argc, char **argv) {
     // ygm::io::line_parser file_reader(world, {"graphs/soc-LiveJournal1.txt"}); // "\t"
     // int num_of_nodes = 4847571;  
 
-    // ygm::io::line_parser file_reader(world, {"graphs/com-orkut.ungraph.txt"}); // "\t"
-    // int num_of_nodes = 3072442;
+    ygm::io::line_parser file_reader(world, {"graphs/com-orkut.ungraph.txt"}); // "\t"
+    int num_of_nodes = 3072442;
 
-    ygm::io::line_parser file_reader(world, {"graphs/as-skitter.txt"}); // "\t"
-    int num_of_nodes = 1696415;
+    // ygm::io::line_parser file_reader(world, {"graphs/as-skitter.txt"}); // "\t"
+    // int num_of_nodes = 1696415;
 
     ygm::container::bag<std::pair<int,int>> graph_edges(world);
     std::vector<std::pair<int,int>> edges;

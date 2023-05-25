@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
     file_reader.for_all([&graph_edges](const std::string& line) {
         // Line Parsing
         int start = 0;
-        std::string delim = ",";
+        std::string delim = " ";
         int end = line.find(delim);
         std::vector<std::string> split_vec;
         while (end != std::string::npos) {
@@ -153,12 +153,12 @@ int main(int argc, char **argv) {
       std::cout << "Time: " << duration.count() << std::endl;
     }
 
-    // auto edge_count_lambda = [&world](const std::string edge_str, const size_t count){
-    //     world.cout() << "(" << edge_str << ")" << ": " <<  count << std::endl;
-    // };
+    auto edge_count_lambda = [&world](const std::pair<int,int> edge_pair, const size_t count){
+        world.cout() << "(" << edge_pair.first << "," << edge_pair.second << "): " <<  count << std::endl;
+    };
 
-    // world.barrier();
-    // edge_frequency.for_all(edge_count_lambda);
+    world.barrier();
+    edge_frequency.for_all(edge_count_lambda);
 
     return 0;
 }
