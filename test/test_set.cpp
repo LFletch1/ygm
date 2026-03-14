@@ -39,6 +39,12 @@ int main(int argc, char** argv) {
     YGM_ASSERT_RELEASE(sset.count("apple") == 1);
     YGM_ASSERT_RELEASE(sset.size() == 3);
 
+    // test contains.
+    YGM_ASSERT_RELEASE(sset.contains("dog"));
+    YGM_ASSERT_RELEASE(sset.contains("apple"));
+    YGM_ASSERT_RELEASE(sset.contains("red"));
+    YGM_ASSERT_RELEASE(!sset.contains("blue"));
+
     ygm::container::set<int> iset(world);
     if (world.rank() == 0) {
       iset.async_insert(42);
@@ -49,6 +55,12 @@ int main(int argc, char** argv) {
     YGM_ASSERT_RELEASE(iset.count(7) == 1);
     YGM_ASSERT_RELEASE(iset.count(100) == 1);
     YGM_ASSERT_RELEASE(iset.size() == 3);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(iset.contains(42));
+    YGM_ASSERT_RELEASE(iset.contains(7));
+    YGM_ASSERT_RELEASE(iset.contains(100));
+    YGM_ASSERT_RELEASE(!iset.contains(3));
   }
 
   //
@@ -65,6 +77,12 @@ int main(int argc, char** argv) {
     YGM_ASSERT_RELEASE(sset.count("apple") == 1);
     YGM_ASSERT_RELEASE(sset.count("red") == 1);
     YGM_ASSERT_RELEASE(sset.size() == 3);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(sset.contains("dog"));
+    YGM_ASSERT_RELEASE(sset.contains("apple"));
+    YGM_ASSERT_RELEASE(sset.contains("red"));
+    YGM_ASSERT_RELEASE(!sset.contains("blue"));
   }
 
   //
@@ -83,6 +101,12 @@ int main(int argc, char** argv) {
     sset.async_erase("dog");
     YGM_ASSERT_RELEASE(sset.count("dog") == 0);
     YGM_ASSERT_RELEASE(sset.size() == 2);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(sset.contains("apple"));
+    YGM_ASSERT_RELEASE(sset.contains("red"));
+    YGM_ASSERT_RELEASE(!sset.contains("dog"));
+    YGM_ASSERT_RELEASE(!sset.contains("blue"));
   }
 
   //
@@ -92,7 +116,9 @@ int main(int argc, char** argv) {
     ygm::container::set<int> iset(world);
     int                      val = 42;
 
-    auto f = [](bool& contains, const int& i) { set_contains = contains; };
+    auto f = [](bool& contains, [[maybe_unused]] const int& i) {
+      set_contains = contains;
+    };
 
     if (world.rank0()) {
       iset.async_contains(val, f);
@@ -118,7 +144,7 @@ int main(int argc, char** argv) {
     static bool                      did_contain = false;
     ygm::container::set<std::string> sset(world);
 
-    auto f = [](bool& contains, const std::string& s) {
+    auto f = [](bool& contains, [[maybe_unused]] const std::string& s) {
       did_contain = contains;
     };
 
@@ -149,7 +175,7 @@ int main(int argc, char** argv) {
 
     world.barrier();
 
-    YGM_ASSERT_RELEASE(iset.size() == num_items);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(num_items));
 
     ygm::container::set<int> to_remove(world);
 
@@ -163,7 +189,7 @@ int main(int argc, char** argv) {
 
     iset.erase(to_remove);
 
-    iset.for_all([remove_size, &world](const auto& item) {
+    iset.for_all([remove_size](const auto& item) {
       YGM_ASSERT_RELEASE(item >= remove_size);
     });
 
@@ -172,7 +198,7 @@ int main(int argc, char** argv) {
       YGM_ASSERT_RELEASE(item >= remove_size);
     }
 
-    YGM_ASSERT_RELEASE(iset.size() == num_items - remove_size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(num_items - remove_size));
   }
 
   // Test batch erase from vector
@@ -189,7 +215,7 @@ int main(int argc, char** argv) {
 
     world.barrier();
 
-    YGM_ASSERT_RELEASE(iset.size() == num_items);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(num_items));
 
     std::vector<int> to_remove;
 
@@ -203,11 +229,11 @@ int main(int argc, char** argv) {
 
     iset.erase(to_remove);
 
-    iset.for_all([remove_size, &world](const auto& item) {
+    iset.for_all([remove_size](const auto& item) {
       YGM_ASSERT_RELEASE(item >= remove_size);
     });
 
-    YGM_ASSERT_RELEASE(iset.size() == num_items - remove_size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(num_items - remove_size));
   }
 
   // Test from bag
@@ -262,6 +288,13 @@ int main(int argc, char** argv) {
     sset.async_insert("car");
     YGM_ASSERT_RELEASE(sset.size() == 4);
     YGM_ASSERT_RELEASE(sset.count("car") == 1);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(sset.contains("apple"));
+    YGM_ASSERT_RELEASE(sset.contains("red"));
+    YGM_ASSERT_RELEASE(sset.contains("dog"));
+    YGM_ASSERT_RELEASE(sset.contains("car"));
+    YGM_ASSERT_RELEASE(!sset.contains("blue"));
   }
 
   //
@@ -279,6 +312,12 @@ int main(int argc, char** argv) {
     YGM_ASSERT_RELEASE(sset2.count("dog") == 1);
     YGM_ASSERT_RELEASE(sset2.count("apple") == 1);
     YGM_ASSERT_RELEASE(sset2.count("red") == 1);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(sset2.contains("apple"));
+    YGM_ASSERT_RELEASE(sset2.contains("red"));
+    YGM_ASSERT_RELEASE(sset2.contains("dog"));
+    YGM_ASSERT_RELEASE(!sset2.contains("blue"));
   }
 
   // //
@@ -337,7 +376,8 @@ int main(int argc, char** argv) {
 
     world.barrier();
     for (int set_index = 0; set_index < num_sets; ++set_index) {
-      YGM_ASSERT_RELEASE(vec_sets[set_index].size() == world.size() + 1);
+      YGM_ASSERT_RELEASE(vec_sets[set_index].size() ==
+                         size_t(world.size() + 1));
     }
   }
 
@@ -355,11 +395,11 @@ int main(int argc, char** argv) {
     }
     world.barrier();
 
-    YGM_ASSERT_RELEASE(iset.size() == size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
 
     ygm::container::set<int> iset2(iset);
-    YGM_ASSERT_RELEASE(iset.size() == size);
-    YGM_ASSERT_RELEASE(iset2.size() == size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
+    YGM_ASSERT_RELEASE(iset2.size() == size_t(size));
 
     if (world.rank0()) {
       for (int i = 0; i < size; ++i) {
@@ -367,8 +407,8 @@ int main(int argc, char** argv) {
       }
     }
     world.barrier();
-    YGM_ASSERT_RELEASE(iset.size() == size);
-    YGM_ASSERT_RELEASE(iset2.size() == 2 * size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
+    YGM_ASSERT_RELEASE(iset2.size() == size_t(2 * size));
   }
 
   //
@@ -385,12 +425,12 @@ int main(int argc, char** argv) {
     }
     world.barrier();
 
-    YGM_ASSERT_RELEASE(iset.size() == size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
 
     ygm::container::set<int> iset2(world);
     iset2 = iset;
-    YGM_ASSERT_RELEASE(iset.size() == size);
-    YGM_ASSERT_RELEASE(iset2.size() == size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
+    YGM_ASSERT_RELEASE(iset2.size() == size_t(size));
 
     if (world.rank0()) {
       for (int i = 0; i < size; ++i) {
@@ -398,8 +438,8 @@ int main(int argc, char** argv) {
       }
     }
     world.barrier();
-    YGM_ASSERT_RELEASE(iset.size() == size);
-    YGM_ASSERT_RELEASE(iset2.size() == 2 * size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
+    YGM_ASSERT_RELEASE(iset2.size() == size_t(2 * size));
   }
 
   //
@@ -416,11 +456,11 @@ int main(int argc, char** argv) {
     }
     world.barrier();
 
-    YGM_ASSERT_RELEASE(iset.size() == size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
 
     ygm::container::set<int> iset2(std::move(iset));
     YGM_ASSERT_RELEASE(iset.size() == 0);
-    YGM_ASSERT_RELEASE(iset2.size() == size);
+    YGM_ASSERT_RELEASE(iset2.size() == size_t(size));
 
     if (world.rank0()) {
       for (int i = 0; i < size; ++i) {
@@ -429,7 +469,7 @@ int main(int argc, char** argv) {
     }
     world.barrier();
     YGM_ASSERT_RELEASE(iset.size() == 0);
-    YGM_ASSERT_RELEASE(iset2.size() == 2 * size);
+    YGM_ASSERT_RELEASE(iset2.size() == size_t(2 * size));
   }
 
   //
@@ -446,12 +486,12 @@ int main(int argc, char** argv) {
     }
     world.barrier();
 
-    YGM_ASSERT_RELEASE(iset.size() == size);
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
 
     ygm::container::set<int> iset2(world);
     iset2 = std::move(iset);
     YGM_ASSERT_RELEASE(iset.size() == 0);
-    YGM_ASSERT_RELEASE(iset2.size() == size);
+    YGM_ASSERT_RELEASE(iset2.size() == size_t(size));
 
     if (world.rank0()) {
       for (int i = 0; i < size; ++i) {
@@ -460,7 +500,40 @@ int main(int argc, char** argv) {
     }
     world.barrier();
     YGM_ASSERT_RELEASE(iset.size() == 0);
-    YGM_ASSERT_RELEASE(iset2.size() == 2 * size);
+    YGM_ASSERT_RELEASE(iset2.size() == size_t(2 * size));
+  }
+
+  //
+  // Test gather_values
+  {
+    ygm::container::set<int> iset(world);
+    int                      size = 32;
+
+    if (world.rank0()) {
+      for (int i = 0; i < size; ++i) {
+        iset.async_insert(i);
+      }
+    }
+    world.barrier();
+
+    YGM_ASSERT_RELEASE(iset.size() == size_t(size));
+
+    std::vector<int> to_gather;
+    std::set<int>    will_find;
+    for (int i = 0; i < size; ++i) {
+      int to_add = 2 * i + 3 * world.rank();
+      to_gather.push_back(to_add);
+      if (to_add < size) {
+        will_find.insert(to_add);
+      }
+    }
+
+    std::set<int> gathered_vals = iset.gather_values(to_gather);
+    YGM_ASSERT_RELEASE(gathered_vals.size() == will_find.size());
+
+    for (const auto found : gathered_vals) {
+      YGM_ASSERT_RELEASE(will_find.count(found) == 1);
+    }
   }
   return 0;
 }

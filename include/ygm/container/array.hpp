@@ -15,6 +15,7 @@
 #include <ygm/container/detail/base_async_visit.hpp>
 #include <ygm/container/detail/base_concepts.hpp>
 #include <ygm/container/detail/base_iteration.hpp>
+#include <ygm/container/detail/base_iterators.hpp>
 #include <ygm/container/detail/base_misc.hpp>
 #include <ygm/container/detail/block_partitioner.hpp>
 
@@ -36,11 +37,13 @@ class array
       public detail::base_misc<array<Value, Index>, std::tuple<Index, Value>>,
       public detail::base_async_visit<array<Value, Index>,
                                       std::tuple<Index, Value>>,
+      public detail::base_iterators<array<Value, Index>>,
       public detail::base_iteration_key_value<array<Value, Index>,
                                               std::tuple<Index, Value>>,
       public detail::base_async_reduce<array<Value, Index>,
                                        std::tuple<Index, Value>> {
-  friend class detail::base_misc<array<Value, Index>, std::tuple<Index, Value>>;
+  friend struct detail::base_misc<array<Value, Index>,
+                                  std::tuple<Index, Value>>;
 
  public:
   using self_type      = array<Value, Index>;
@@ -56,6 +59,86 @@ class array
                                  std::tuple<Index, Value>>::async_visit;
   using detail::base_async_insert_key_value<array<Value, Index>,
                                             for_all_args>::async_insert;
+
+  /*
+   * @brief Proxy class for returning pair-like objects that contain references
+   */
+  template <typename T, bool IsConst>
+  struct iterator_proxy {
+   public:
+    using value_ref_type = std::conditional_t<IsConst, const T&, T&>;
+
+    iterator_proxy(const key_type i, value_ref_type v) : index(i), value(v) {};
+
+    /*
+     * @brief `get()` method for tuple-like access
+     *
+     * Allows use of structured bindings
+     */
+    template <std::size_t N>
+    decltype(auto) get() const {
+      if constexpr (N == 0)
+        return index;
+      else if constexpr (N == 1)
+        return value;
+    }
+
+    const key_type index;
+    value_ref_type value;
+  };
+
+  /*
+   * @brief Iterator for array that gives access to items and their indices
+   */
+  template <typename T, bool IsConst>
+  class array_iterator {
+   public:
+    using value_type          = std::pair<key_type, mapped_type&>;
+    using iterator_proxy_type = iterator_proxy<T, IsConst>;
+
+    array_iterator(self_type* arr, const key_type offset, const key_type index)
+        : p_arr(arr), m_offset(offset), m_index(index) {};
+
+    iterator_proxy_type operator*() const {
+      return iterator_proxy_type(m_index + m_offset,
+                                 p_arr->m_local_vec[m_index]);
+    }
+
+    struct arrow_proxy {
+      iterator_proxy_type  m_proxy;
+      iterator_proxy_type* operator->() { return &m_proxy; }
+    };
+
+    arrow_proxy operator->() const { return arrow_proxy{**this}; }
+
+    array_iterator& operator++() {
+      m_index++;
+
+      return *this;
+    }
+
+    array_iterator operator++(int) {
+      iterator tmp(*this);
+      ++(*this);
+      return tmp;
+    }
+
+    bool operator==(const array_iterator& other) {
+      return m_index == other.m_index;
+    }
+
+    bool operator!=(const array_iterator& other) {
+      return m_index != other.m_index;
+    }
+
+   private:
+    self_type* p_arr;
+    key_type   m_offset;
+    key_type   m_index;
+  };
+
+  using iterator       = array_iterator<mapped_type, false>;
+  using const_iterator = array_iterator<mapped_type, true>;
 
   array() = delete;
 
@@ -173,9 +256,10 @@ class array
    * existing container and constructed array.
    */
   template <typename T>
-  array(ygm::comm& comm, const T& t) requires detail::HasForAll<T> &&
-      detail::SingleItemTuple<typename T::for_all_args> &&
-      std::same_as<typename T::for_all_args, std::tuple<mapped_type>>
+  array(ygm::comm& comm, const T& t)
+    requires detail::HasForAll<T> &&
+                 detail::SingleItemTuple<typename T::for_all_args> &&
+                 std::same_as<typename T::for_all_args, std::tuple<mapped_type>>
       : m_comm(comm), pthis(this), m_default_value{}, partitioner(comm, 0) {
     m_comm.log(log_level::info, "Creating ygm::container::array");
     pthis.check(m_comm);
@@ -185,7 +269,7 @@ class array
     key_type local_index = prefix_sum(t.local_size(), m_comm);
 
     t.for_all([this, &local_index](const auto& value) {
-      async_insert(local_index++, value);
+      this->async_insert(local_index++, value);
     });
 
     m_comm.barrier();
@@ -202,17 +286,19 @@ class array
    * Array size is determined by finding the largest index across all ranks.
    */
   template <typename T>
-  array(ygm::comm& comm, const T& t) requires detail::HasForAll<T> &&
-      detail::SingleItemTuple<typename T::for_all_args> && detail::
-          DoubleItemTuple<std::tuple_element_t<0, typename T::for_all_args>> &&
-      std::convertible_to<
-          std::tuple_element_t<
-              0, std::tuple_element_t<0, typename T::for_all_args>>,
-          key_type> &&
-      std::convertible_to<
-          std::tuple_element_t<
-              1, std::tuple_element_t<0, typename T::for_all_args>>,
-          mapped_type>
+  array(ygm::comm& comm, const T& t)
+    requires detail::HasForAll<T> &&
+                 detail::SingleItemTuple<typename T::for_all_args> &&
+                 detail::DoubleItemTuple<
+                     std::tuple_element_t<0, typename T::for_all_args>> &&
+                 std::convertible_to<
+                     std::tuple_element_t<
+                         0, std::tuple_element_t<0, typename T::for_all_args>>,
+                     key_type> &&
+                 std::convertible_to<
+                     std::tuple_element_t<
+                         1, std::tuple_element_t<0, typename T::for_all_args>>,
+                     mapped_type>
       : m_comm(comm), pthis(this), m_default_value{}, partitioner(comm, 0) {
     m_comm.log(log_level::info, "Creating ygm::container::array");
     pthis.check(m_comm);
@@ -227,7 +313,7 @@ class array
     resize(max_index + 1);
 
     t.for_all([this](const auto& index_value) {
-      async_insert(std::get<0>(index_value), std::get<1>(index_value));
+      this->async_insert(std::get<0>(index_value), std::get<1>(index_value));
     });
 
     m_comm.barrier();
@@ -244,26 +330,31 @@ class array
    * determined by finding the largest index across all ranks.
    */
   template <typename T>
-  array(ygm::comm& comm, const T& t) requires detail::HasForAll<T> &&
-      detail::DoubleItemTuple<typename T::for_all_args> && std::convertible_to<
-          std::tuple_element_t<0, typename T::for_all_args>, key_type> &&
-      std::convertible_to<std::tuple_element_t<0, typename T::for_all_args>,
-                          mapped_type>
+  array(ygm::comm& comm, const T& t)
+    requires detail::HasForAll<T> &&
+                 detail::DoubleItemTuple<typename T::for_all_args> &&
+                 std::convertible_to<
+                     std::tuple_element_t<0, typename T::for_all_args>,
+                     key_type> &&
+                 std::convertible_to<
+                     std::tuple_element_t<0, typename T::for_all_args>,
+                     mapped_type>
       : m_comm(comm), pthis(this), m_default_value{}, partitioner(comm, 0) {
     m_comm.log(log_level::info, "Creating ygm::container::array");
     pthis.check(m_comm);
 
     key_type max_index{0};
-    t.for_all([&max_index](const auto& index, const auto& value) {
-      max_index = std::max<mapped_type>(index, max_index);
-    });
+    t.for_all(
+        [&max_index](const auto& index, [[maybe_unused]] const auto& value) {
+          max_index = std::max<mapped_type>(index, max_index);
+        });
 
     max_index = ::ygm::max(max_index, m_comm);
 
     resize(max_index + 1);
 
     t.for_all([this](const auto& index, const auto& value) {
-      async_insert(index, value);
+      this->async_insert(index, value);
     });
 
     m_comm.barrier();
@@ -281,9 +372,10 @@ class array
    * constructed array.
    */
   template <typename T>
-  array(ygm::comm& comm, const T& t) requires detail::STLContainer<T> &&
-      (not detail::SingleItemTuple<typename T::value_type>)&&std::
-          convertible_to<typename T::value_type, mapped_type>
+  array(ygm::comm& comm, const T& t)
+    requires detail::STLContainer<T> &&
+                 (not detail::SingleItemTuple<typename T::value_type>) &&
+                 std::convertible_to<typename T::value_type, mapped_type>
       : m_comm(comm), pthis(this), m_default_value{}, partitioner(comm, 0) {
     m_comm.log(log_level::info, "Creating ygm::container::array");
     pthis.check(m_comm);
@@ -295,7 +387,7 @@ class array
 
     std::for_each(t.cbegin(), t.cend(),
                   [this, &local_index](const auto& value) {
-                    async_insert(local_index++, value);
+                    this->async_insert(local_index++, value);
                   });
 
     m_comm.barrier();
@@ -312,11 +404,15 @@ class array
    * across all ranks.
    */
   template <typename T>
-  array(ygm::comm& comm, const T& t) requires detail::STLContainer<T> &&
-      detail::DoubleItemTuple<typename T::value_type> && std::convertible_to<
-          std::tuple_element_t<0, typename T::value_type>, key_type> &&
-      std::convertible_to<std::tuple_element_t<1, typename T::value_type>,
-                          mapped_type>
+  array(ygm::comm& comm, const T& t)
+    requires detail::STLContainer<T> &&
+                 detail::DoubleItemTuple<typename T::value_type> &&
+                 std::convertible_to<
+                     std::tuple_element_t<0, typename T::value_type>,
+                     key_type> &&
+                 std::convertible_to<
+                     std::tuple_element_t<1, typename T::value_type>,
+                     mapped_type>
       : m_comm(comm), pthis(this), m_default_value{}, partitioner(comm, 0) {
     m_comm.log(log_level::info, "Creating ygm::container::array");
     pthis.check(m_comm);
@@ -331,7 +427,7 @@ class array
     resize(max_index + 1);
 
     std::for_each(t.cbegin(), t.cend(), [this](const auto& index_value) {
-      async_insert(std::get<0>(index_value), std::get<1>(index_value));
+      this->async_insert(std::get<0>(index_value), std::get<1>(index_value));
     });
   }
 
@@ -389,6 +485,69 @@ class array
     other.m_global_size = 0;
 
     return *this;
+  }
+
+  /**
+   * @brief Access to begin iterator of locally-held items
+   *
+   * @return Local iterator to beginning of items held by process.
+   * @details Does not call `barrier()`.
+   */
+  iterator local_begin() {
+    return iterator(this, partitioner.local_start(), 0);
+  }
+
+  /**
+   * @brief Access to begin const_iterator of locally-held items for const array
+   *
+   * @return Local const iterator to beginning of items held by process.
+   * @details Does not call `barrier()`.
+   */
+  const_iterator local_begin() const {
+    return const_iterator(this, partitioner.local_start(), 0);
+  }
+
+  /**
+   * @brief Access to begin const_iterator of locally-held items for const array
+   *
+   * @return Local const iterator to beginning of items held by process.
+   * @details Does not call `barrier()`.
+   */
+  const_iterator local_cbegin() const {
+    return const_iterator(const_cast<self_type*>(this),
+                          partitioner.local_start(), 0);
+  }
+
+  /**
+   * @brief Access to end iterator of locally-held items
+   *
+   * @return Local iterator to ending of items held by process.
+   * @details Does not call `barrier()`.
+   */
+  iterator local_end() {
+    return iterator(this, partitioner.local_start(), partitioner.local_size());
+  }
+
+  /**
+   * @brief Access to end const_iterator of locally-held items for const array
+   *
+   * @return Local const iterator to ending of items held by process.
+   * @details Does not call `barrier()`.
+   */
+  const_iterator local_end() const {
+    return const_iterator(this, partitioner.local_start(),
+                          partitioner.local_size());
+  }
+
+  /**
+   * @brief Access to end const_iterator of locally-held items for const array
+   *
+   * @return Local const iterator to ending of items held by process.
+   * @details Does not call `barrier()`.
+   */
+  const_iterator local_cend() const {
+    return const_iterator(const_cast<self_type*>(this),
+                          partitioner.local_start(), partitioner.local_size());
   }
 
   /**
@@ -453,14 +612,14 @@ class array
    * @param b Binary operation to apply
    */
   template <typename BinaryOp>
-  void async_binary_op_update_value(const key_type     index,
-                                    const mapped_type& value,
-                                    const BinaryOp&    b) {
+  void async_binary_op_update_value(const key_type                   index,
+                                    const mapped_type&               value,
+                                    [[maybe_unused]] const BinaryOp& b) {
     YGM_ASSERT_RELEASE(index < m_global_size);
-    auto updater = [](const key_type i, mapped_type& v,
+    auto updater = []([[maybe_unused]] const key_type i, mapped_type& v,
                       const mapped_type& new_value) {
-      BinaryOp* binary_op;
-      v = (*binary_op)(v, new_value);
+      BinaryOp binary_op;
+      v = binary_op(v, new_value);
     };
 
     async_visit(index, updater, value);
@@ -565,11 +724,12 @@ class array
    * @param u Unary operation to apply
    */
   template <typename UnaryOp>
-  void async_unary_op_update_value(const key_type index, const UnaryOp& u) {
+  void async_unary_op_update_value(const key_type                  index,
+                                   [[maybe_unused]] const UnaryOp& u) {
     YGM_ASSERT_RELEASE(index < m_global_size);
-    auto updater = [](const key_type i, mapped_type& v) {
-      UnaryOp* u;
-      v = (*u)(v);
+    auto updater = []([[maybe_unused]] const key_type i, mapped_type& v) {
+      UnaryOp u;
+      v = u(v);
     };
 
     async_visit(index, updater);
@@ -692,7 +852,7 @@ class array
   void local_for_all(Function&& fn) {
     if constexpr (std::is_invocable<decltype(fn), const key_type,
                                     mapped_type&>()) {
-      for (int i = 0; i < m_local_vec.size(); ++i) {
+      for (size_t i = 0; i < m_local_vec.size(); ++i) {
         key_type g_index = partitioner.global_index(i);
         fn(g_index, m_local_vec[i]);
       }
@@ -775,7 +935,7 @@ class array
     samples.clear();
     samples.shrink_to_fit();
 
-    YGM_ASSERT_RELEASE(pivots.size() == m_comm.size() - 1);
+    YGM_ASSERT_RELEASE(pivots.size() == size_t(m_comm.size() - 1));
 
     //
     // Partition using pivots
@@ -803,14 +963,15 @@ class array
     m_comm.barrier();
   }
 
-  detail::block_partitioner<key_type> partitioner;
-
  private:
+  ygm::comm&                       m_comm;
+  typename ygm::ygm_ptr<self_type> pthis;
   size_type                        m_global_size;
   mapped_type                      m_default_value;
   std::vector<mapped_type>         m_local_vec;
-  ygm::comm&                       m_comm;
-  typename ygm::ygm_ptr<self_type> pthis;
+
+ public:
+  detail::block_partitioner<key_type> partitioner;
 };
 
 }  // namespace ygm::container

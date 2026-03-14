@@ -40,6 +40,12 @@ int main(int argc, char **argv) {
     YGM_ASSERT_RELEASE(smap.count("dog") == 1);
     YGM_ASSERT_RELEASE(smap.count("apple") == 1);
     YGM_ASSERT_RELEASE(smap.count("red") == 1);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(smap.contains("dog"));
+    YGM_ASSERT_RELEASE(smap.contains("apple"));
+    YGM_ASSERT_RELEASE(smap.contains("red"));
+    YGM_ASSERT_RELEASE(!smap.contains("blue"));
   }
 
   //
@@ -54,6 +60,12 @@ int main(int argc, char **argv) {
     YGM_ASSERT_RELEASE(smap.count("dog") == 1);
     YGM_ASSERT_RELEASE(smap.count("apple") == 1);
     YGM_ASSERT_RELEASE(smap.count("red") == 1);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(smap.contains("dog"));
+    YGM_ASSERT_RELEASE(smap.contains("apple"));
+    YGM_ASSERT_RELEASE(smap.contains("red"));
+    YGM_ASSERT_RELEASE(!smap.contains("blue"));
   }
 
   //
@@ -71,22 +83,26 @@ int main(int argc, char **argv) {
 
     world.barrier();
 
-    smap.async_visit("dog", [](const auto &key, auto &value) {
+    smap.async_visit("dog", []([[maybe_unused]] const auto &key, auto &value) {
       YGM_ASSERT_RELEASE(value == "cat");
     });
 
-    smap.async_visit_if_contains("apple", [](auto key, auto &value) {
-      YGM_ASSERT_RELEASE(value == "orange");
-    });
+    smap.async_visit_if_contains("apple",
+                                 []([[maybe_unused]] auto key, auto &value) {
+                                   YGM_ASSERT_RELEASE(value == "orange");
+                                 });
 
     const ygm::container::map<std::string, std::string> &csmap = smap;
-    csmap.async_visit_if_contains("red", [](auto key, auto &value) {
-      YGM_ASSERT_RELEASE(value == "green");
-    });
+    csmap.async_visit_if_contains("red",
+                                  []([[maybe_unused]] auto key, auto &value) {
+                                    YGM_ASSERT_RELEASE(value == "green");
+                                  });
 
     smap.async_visit_if_contains(
         "SHOULD_BE_MISSING",
-        [](auto key, auto &value) { YGM_ASSERT_RELEASE(false); });
+        []([[maybe_unused]] auto key, [[maybe_unused]] auto &value) {
+          YGM_ASSERT_RELEASE(false);
+        });
   }
 
   //
@@ -105,7 +121,8 @@ int main(int argc, char **argv) {
     world.barrier();
 
     struct dog_check {
-      void operator()(const std::string &key, std::string &value) {
+      void operator()([[maybe_unused]] const std::string &key,
+                      std::string                        &value) {
         YGM_ASSERT_RELEASE(value == "cat");
       }
     };
@@ -126,8 +143,10 @@ int main(int argc, char **argv) {
       YGM_ASSERT_RELEASE(key == "cat");
       YGM_ASSERT_RELEASE(value == "");
     });
-    smap.async_visit_if_contains(
-        "red", [](const auto &k, const auto &v) { YGM_ASSERT_RELEASE(false); });
+    smap.async_visit_if_contains("red", []([[maybe_unused]] const auto &k,
+                                           [[maybe_unused]] const auto &v) {
+      YGM_ASSERT_RELEASE(false);
+    });
 
     YGM_ASSERT_RELEASE(smap.count("dog") == 1);
     YGM_ASSERT_RELEASE(smap.count("cat") == 1);
@@ -135,13 +154,21 @@ int main(int argc, char **argv) {
 
     YGM_ASSERT_RELEASE(smap.size() == 2);
 
+    // test contains.
+    YGM_ASSERT_RELEASE(smap.contains("dog"));
+    YGM_ASSERT_RELEASE(smap.contains("cat"));
+    YGM_ASSERT_RELEASE(!smap.contains("red"));
+    YGM_ASSERT_RELEASE(!smap.contains("blue"));
+
     if (world.rank() == 0) {
       smap.async_erase("dog");
     }
     YGM_ASSERT_RELEASE(smap.count("dog") == 0);
     YGM_ASSERT_RELEASE(smap.size() == 1);
+    YGM_ASSERT_RELEASE(!smap.contains("dog"));
     smap.async_erase("cat");
     YGM_ASSERT_RELEASE(smap.count("cat") == 0);
+    YGM_ASSERT_RELEASE(!smap.contains("cat"));
 
     YGM_ASSERT_RELEASE(smap.size() == 0);
   }
@@ -156,12 +183,14 @@ int main(int argc, char **argv) {
     world.barrier();
 
     if (world.rank0()) {
-      smap.async_visit("dog", [](const auto &k, const auto &v) {
-        YGM_ASSERT_RELEASE(v == "cat");
-      });
-      smap.async_visit("not inserted", [](const auto &k, const auto &v) {
-        YGM_ASSERT_RELEASE(v == "NOT FOUND");
-      });
+      smap.async_visit("dog",
+                       []([[maybe_unused]] const auto &k, const auto &v) {
+                         YGM_ASSERT_RELEASE(v == "cat");
+                       });
+      smap.async_visit("not inserted",
+                       []([[maybe_unused]] const auto &k, const auto &v) {
+                         YGM_ASSERT_RELEASE(v == "NOT FOUND");
+                       });
     }
 
     YGM_ASSERT_RELEASE(smap.size() == 2);
@@ -259,9 +288,17 @@ int main(int argc, char **argv) {
     YGM_ASSERT_RELEASE(smap.count("dog") == 1);
     YGM_ASSERT_RELEASE(smap.count("apple") == 1);
     YGM_ASSERT_RELEASE(smap.count("red") == 1);
+
+    YGM_ASSERT_RELEASE(!smap.contains("car"));
     smap.async_insert_or_assign("car", "truck");
     YGM_ASSERT_RELEASE(smap.size() == 4);
     YGM_ASSERT_RELEASE(smap.count("car") == 1);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(smap.contains("dog"));
+    YGM_ASSERT_RELEASE(smap.contains("car"));
+    YGM_ASSERT_RELEASE(smap.contains("red"));
+    YGM_ASSERT_RELEASE(!smap.contains("blue"));
   }
 
   // Test batch erase from set
@@ -278,7 +315,7 @@ int main(int argc, char **argv) {
 
     world.barrier();
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items));
 
     ygm::container::set<int> to_remove(world);
 
@@ -292,16 +329,17 @@ int main(int argc, char **argv) {
 
     imap.erase(to_remove);
 
-    imap.for_all([remove_size, &world](const auto &key, const auto &value) {
-      YGM_ASSERT_RELEASE(key >= remove_size);
-    });
+    imap.for_all(
+        [remove_size](const auto &key, [[maybe_unused]] const auto &value) {
+          YGM_ASSERT_RELEASE(key >= remove_size);
+        });
 
     // testing range based loop
     for (auto &kv : imap) {
       YGM_ASSERT_RELEASE(kv.first >= remove_size);
     }
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items - remove_size);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items - remove_size));
   }
 
   // Test batch erase from map
@@ -318,7 +356,7 @@ int main(int argc, char **argv) {
 
     world.barrier();
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items));
 
     ygm::container::map<int, int> to_remove(world);
 
@@ -332,11 +370,12 @@ int main(int argc, char **argv) {
 
     imap.erase(to_remove);
 
-    imap.for_all([remove_size, &world](const auto &key, const auto &value) {
-      YGM_ASSERT_RELEASE(((key % 2) == 1) || (key >= remove_size));
-    });
+    imap.for_all(
+        [remove_size](const auto &key, [[maybe_unused]] const auto &value) {
+          YGM_ASSERT_RELEASE(((key % 2) == 1) || (key >= remove_size));
+        });
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items - remove_size / 2);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items - remove_size / 2));
   }
 
   // Test batch erase from vector
@@ -353,7 +392,7 @@ int main(int argc, char **argv) {
 
     world.barrier();
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items));
 
     std::vector<int> to_remove;
 
@@ -367,11 +406,12 @@ int main(int argc, char **argv) {
 
     imap.erase(to_remove);
 
-    imap.for_all([remove_size, &world](const auto &key, const auto &value) {
-      YGM_ASSERT_RELEASE(key >= remove_size);
-    });
+    imap.for_all(
+        [remove_size](const auto &key, [[maybe_unused]] const auto &value) {
+          YGM_ASSERT_RELEASE(key >= remove_size);
+        });
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items - remove_size);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items - remove_size));
   }
 
   // Test batch erase from vector of keys and values
@@ -388,7 +428,7 @@ int main(int argc, char **argv) {
 
     world.barrier();
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items));
 
     std::vector<std::pair<int, int>> to_remove;
 
@@ -402,11 +442,12 @@ int main(int argc, char **argv) {
 
     imap.erase(to_remove);
 
-    imap.for_all([remove_size, &world](const auto &key, const auto &value) {
-      YGM_ASSERT_RELEASE(((key % 2) == 1) || (key >= remove_size));
-    });
+    imap.for_all(
+        [remove_size](const auto &key, [[maybe_unused]] const auto &value) {
+          YGM_ASSERT_RELEASE(((key % 2) == 1) || (key >= remove_size));
+        });
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items - remove_size / 2);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items - remove_size / 2));
   }
 
   // Test batch erase from bag of keys and values
@@ -423,7 +464,7 @@ int main(int argc, char **argv) {
 
     world.barrier();
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items));
 
     ygm::container::bag<std::pair<int, int>> to_remove(world);
 
@@ -437,18 +478,19 @@ int main(int argc, char **argv) {
 
     imap.erase(to_remove);
 
-    imap.for_all([remove_size, &world](const auto &key, const auto &value) {
-      YGM_ASSERT_RELEASE(((key % 2) == 1) || (key >= remove_size));
-    });
+    imap.for_all(
+        [remove_size](const auto &key, [[maybe_unused]] const auto &value) {
+          YGM_ASSERT_RELEASE(((key % 2) == 1) || (key >= remove_size));
+        });
 
-    YGM_ASSERT_RELEASE(imap.size() == num_items - remove_size / 2);
+    YGM_ASSERT_RELEASE(imap.size() == size_t(num_items - remove_size / 2));
   }
 
   //
   // Test map<vector>
   {
     ygm::container::map<std::string, std::vector<std::string>> smap(world);
-    auto str_push_back = [](const auto &key, auto &value,
+    auto str_push_back = []([[maybe_unused]] const auto &key, auto &value,
                             const std::string &str) {
       // auto str_push_back = [](auto key_value, const std::string &str) {
       value.push_back(str);

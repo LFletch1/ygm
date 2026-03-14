@@ -11,7 +11,6 @@
 #include <ygm/comm.hpp>
 #include <ygm/container/bag.hpp>
 #include <ygm/container/counting_set.hpp>
-#include <ygm/random.hpp>
 
 int main(int argc, char** argv) {
   ygm::comm world(&argc, &argv);
@@ -37,10 +36,10 @@ int main(int argc, char** argv) {
     cs.async_insert("blue");
     cs.async_insert("fish");
 
-    std::vector< std::pair<std::string, size_t> > top1 = cs.gather_topk(
+    std::vector<std::pair<std::string, size_t> > top1 = cs.gather_topk(
         1, [](auto p1, auto p2) { return p1.second > p2.second; });
 
     YGM_ASSERT_RELEASE(top1[0].first == "fish");
-    YGM_ASSERT_RELEASE(top1[0].second == 4 * world.size());
+    YGM_ASSERT_RELEASE(top1[0].second == size_t(4 * world.size()));
   }
 }

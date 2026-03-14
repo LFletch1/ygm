@@ -12,6 +12,7 @@
 #include <ygm/container/detail/base_async_insert.hpp>
 #include <ygm/container/detail/base_async_insert_contains.hpp>
 #include <ygm/container/detail/base_batch_erase.hpp>
+#include <ygm/container/detail/base_contains.hpp>
 #include <ygm/container/detail/base_count.hpp>
 #include <ygm/container/detail/base_iteration.hpp>
 #include <ygm/container/detail/base_iterators.hpp>
@@ -27,11 +28,12 @@ class set
       public detail::base_batch_erase_key<set<Value>, std::tuple<Value>>,
       public detail::base_async_contains<set<Value>, std::tuple<Value>>,
       public detail::base_async_insert_contains<set<Value>, std::tuple<Value>>,
+      public detail::base_contains<set<Value>, std::tuple<Value>>,
       public detail::base_count<set<Value>, std::tuple<Value>>,
       public detail::base_misc<set<Value>, std::tuple<Value>>,
       public detail::base_iterators<set<Value>>,
       public detail::base_iteration_value<set<Value>, std::tuple<Value>> {
-  friend class detail::base_misc<set<Value>, std::tuple<Value>>;
+  friend struct detail::base_misc<set<Value>, std::tuple<Value>>;
 
   using local_container_type =
       boost::unordered::unordered_flat_set<Value, detail::hash<Value>>;
@@ -44,6 +46,10 @@ class set
   using container_type = ygm::container::set_tag;
   using iterator       = typename local_container_type::iterator;
   using const_iterator = typename local_container_type::const_iterator;
+
+  // Pull in async_contains for use within the set
+  using detail::base_async_contains<set<Value>,
+                                    std::tuple<Value>>::async_contains;
 
   /**
    * @brief Set constructor
@@ -128,8 +134,8 @@ class set
   set(const self_type &other)
       : m_comm(other.comm()),
         pthis(this),
-        partitioner(other.comm()),
-        m_local_set(other.m_local_set) {
+        m_local_set(other.m_local_set),
+        partitioner(other.comm()) {
     m_comm.log(log_level::info, "Creating ygm::container::set");
     pthis.check(m_comm);
   }
@@ -137,8 +143,8 @@ class set
   set(self_type &&other) noexcept
       : m_comm(other.comm()),
         pthis(this),
-        partitioner(other.partitioner),
-        m_local_set(std::move(other.m_local_set)) {
+        m_local_set(std::move(other.m_local_set)),
+        partitioner(other.partitioner) {
     m_comm.log(log_level::info, "Creating ygm::container::set");
     pthis.check(m_comm);
   }
@@ -229,6 +235,16 @@ class set
   }
 
   /**
+   * @brief Check if a value exists locally
+   *
+   * @param val Value to check for
+   * @return True if value exists locally, false otherwise
+   */
+  bool local_contains(const value_type &val) const {
+    return m_local_set.contains(val);
+  }
+
+  /**
    * @brief Get the number of elements stored on the local process.
    *
    * @return Local size of set
@@ -261,11 +277,41 @@ class set
   }
 
   /**
+   * @brief Collective operation to look up items that exist within set
+   *
+   * @param values Values local rank wants to look up in set
+   * @return `std::set` of provided values that exist within the YGM set
+   */
+  template <typename STLValueContainer>
+  std::set<value_type> gather_values(const STLValueContainer &values) {
+    std::set<value_type>         to_return;
+    static std::set<value_type> *sp_to_return;
+    sp_to_return = &to_return;
+
+    auto fetcher = [](auto pset, bool exists, const value_type &val, int from) {
+      auto returner = [](const value_type &val) { sp_to_return->insert(val); };
+
+      if (exists) {
+        pset->comm().async(from, returner, val);
+      }
+    };
+
+    m_comm.barrier();
+    for (const auto &val : values) {
+      async_contains(val, fetcher, m_comm.rank());
+    }
+    m_comm.barrier();
+
+    sp_to_return = nullptr;
+    return to_return;
+  }
+
+  /**
    * @brief Serialize a set to a collection of files to be read back in later
    *
    * @param fname Filename prefix to create filename used by every rank from
    */
-  void serialize(const std::string &fname) {}
+  void serialize([[maybe_unused]] const std::string &fname) {}
 
   /**
    * @brief Deserialize a set from files
@@ -274,9 +320,7 @@ class set
    * @details Currently requires the number of ranks deserializing a bag to be
    * the same as was used for serialization.
    */
-  void deserialize(const std::string &fname) {}
-
-  detail::hash_partitioner<detail::hash<value_type>> partitioner;
+  void deserialize([[maybe_unused]] const std::string &fname) {}
 
   /**
    * @brief Swap elements held locally between sets
@@ -287,8 +331,11 @@ class set
 
  private:
   ygm::comm                       &m_comm;
-  local_container_type             m_local_set;
   typename ygm::ygm_ptr<self_type> pthis;
+  local_container_type             m_local_set;
+
+ public:
+  detail::hash_partitioner<detail::hash<value_type>> partitioner;
 };
 
 }  // namespace ygm::container

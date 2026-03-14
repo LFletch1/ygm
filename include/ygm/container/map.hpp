@@ -13,6 +13,7 @@
 #include <ygm/container/detail/base_async_reduce.hpp>
 #include <ygm/container/detail/base_async_visit.hpp>
 #include <ygm/container/detail/base_batch_erase.hpp>
+#include <ygm/container/detail/base_contains.hpp>
 #include <ygm/container/detail/base_count.hpp>
 #include <ygm/container/detail/base_iteration.hpp>
 #include <ygm/container/detail/base_iterators.hpp>
@@ -28,6 +29,7 @@ class map
       public detail::base_async_insert_or_assign<map<Key, Value>,
                                                  std::tuple<Key, Value>>,
       public detail::base_misc<map<Key, Value>, std::tuple<Key, Value>>,
+      public detail::base_contains<map<Key, Value>, std::tuple<Key, Value>>,
       public detail::base_count<map<Key, Value>, std::tuple<Key, Value>>,
       public detail::base_async_reduce<map<Key, Value>, std::tuple<Key, Value>>,
       public detail::base_async_erase_key<map<Key, Value>,
@@ -40,7 +42,7 @@ class map
       public detail::base_iterators<map<Key, Value>>,
       public detail::base_iteration_key_value<map<Key, Value>,
                                               std::tuple<Key, Value>> {
-  friend class detail::base_misc<map<Key, Value>, std::tuple<Key, Value>>;
+  friend struct detail::base_misc<map<Key, Value>, std::tuple<Key, Value>>;
 
   using local_container_type =
       boost::unordered::unordered_flat_map<Key, Value, detail::hash<Key>>;
@@ -64,7 +66,7 @@ class map
    * @param comm Communicator to use for communication
    */
   map(ygm::comm& comm)
-      : m_comm(comm), pthis(this), partitioner(comm), m_default_value() {
+      : m_comm(comm), pthis(this), m_default_value(), partitioner(comm) {
     m_comm.log(log_level::info, "Creating ygm::container::map");
     pthis.check(m_comm);
   }
@@ -78,8 +80,8 @@ class map
   map(ygm::comm& comm, const mapped_type& default_value)
       : m_comm(comm),
         pthis(this),
-        partitioner(comm),
-        m_default_value(default_value) {
+        m_default_value(default_value),
+        partitioner(comm) {
     m_comm.log(log_level::info, "Creating ygm::container::map");
     pthis.check(m_comm);
   }
@@ -92,7 +94,7 @@ class map
    * @details Initializer list is assumed to be replicated on all ranks.
    */
   map(ygm::comm& comm, std::initializer_list<std::pair<Key, Value>> l)
-      : m_comm(comm), pthis(this), partitioner(comm), m_default_value() {
+      : m_comm(comm), pthis(this), m_default_value(), partitioner(comm) {
     m_comm.log(log_level::info, "Creating ygm::container::map");
     pthis.check(m_comm);
     if (m_comm.rank0()) {
@@ -110,11 +112,11 @@ class map
    * @param cont STL container containing key-value pairs to put in map
    */
   template <typename STLContainer>
-  map(ygm::comm&          comm,
-      const STLContainer& cont) requires detail::STLContainer<STLContainer> &&
-      std::convertible_to<typename STLContainer::value_type,
-                          std::pair<Key, Value>>
-      : m_comm(comm), pthis(this), partitioner(comm), m_default_value() {
+  map(ygm::comm& comm, const STLContainer& cont)
+    requires detail::STLContainer<STLContainer> &&
+                 std::convertible_to<typename STLContainer::value_type,
+                                     std::pair<Key, Value>>
+      : m_comm(comm), pthis(this), m_default_value(), partitioner(comm) {
     m_comm.log(log_level::info, "Creating ygm::container::map");
     pthis.check(m_comm);
 
@@ -134,10 +136,10 @@ class map
    * is itself a key-value pair.
    */
   template <typename YGMContainer>
-  map(ygm::comm&          comm,
-      const YGMContainer& yc) requires detail::HasForAll<YGMContainer> &&
-      detail::SingleItemTuple<typename YGMContainer::for_all_args>
-      : m_comm(comm), pthis(this), partitioner(comm), m_default_value() {
+  map(ygm::comm& comm, const YGMContainer& yc)
+    requires detail::HasForAll<YGMContainer> &&
+                 detail::SingleItemTuple<typename YGMContainer::for_all_args>
+      : m_comm(comm), pthis(this), m_default_value(), partitioner(comm) {
     m_comm.log(log_level::info, "Creating ygm::container::map");
     pthis.check(m_comm);
 
@@ -156,9 +158,9 @@ class map
   map(const self_type& other)
       : m_comm(other.comm()),
         pthis(this),
-        partitioner(other.comm()),
+        m_local_map(other.m_local_map),
         m_default_value(other.m_default_value),
-        m_local_map(other.m_local_map) {
+        partitioner(other.comm()) {
     m_comm.log(log_level::info, "Copying ygm::container::map");
     pthis.check(m_comm);
   }
@@ -166,9 +168,9 @@ class map
   map(self_type&& other) noexcept
       : m_comm(other.comm()),
         pthis(this),
-        partitioner(other.comm()),
+        m_local_map(std::move(other.m_local_map)),
         m_default_value(other.m_default_value),
-        m_local_map(std::move(other.m_local_map)) {
+        partitioner(other.comm()) {
     m_comm.log(log_level::info, "Moving ygm::container::map");
     pthis.check(m_comm);
   }
@@ -423,10 +425,10 @@ class map
   }
 
   /**
-   * @brief Collective operation to look up item counts from each rank
+   * @brief Collective operation to look up key-value pairs from each rank
    *
-   * @param keys Keys local rank wants to collect counts for
-   * @return `std::map` of provided keys and their counts
+   * @param keys Keys local rank wants to collect values for
+   * @return `std::map` of provided keys and their values
    */
   template <typename STLKeyContainer>
   std::map<key_type, mapped_type> gather_keys(const STLKeyContainer& keys) {
@@ -434,7 +436,7 @@ class map
     static std::map<key_type, mapped_type>& sto_return = to_return;
 
     auto fetcher = [](auto pcomm, int from, const key_type& key, auto pmap) {
-      auto returner = [](auto pcomm, const key_type& key,
+      auto returner = [](const key_type&                 key,
                          const std::vector<mapped_type>& values) {
         for (const auto& v : values) {
           sto_return.insert(std::make_pair(key, v));
@@ -562,6 +564,16 @@ class map
     return m_local_map.count(key);
   }
 
+  /**
+   * @brief Check if a key exists locally
+   *
+   * @param key key to check for
+   * @return True if `key` exists locally, false otherwise
+   */
+  bool local_contains(const key_type& key) const {
+    return m_local_map.contains(key);
+  }
+
   // void serialize(const std::string& fname) { m_impl.serialize(fname); }
   // void deserialize(const std::string& fname) { m_impl.deserialize(fname); }
 
@@ -585,8 +597,6 @@ class map
   //   return m_impl.topk(k, cfn);
   // }
 
-  detail::hash_partitioner<detail::hash<key_type>> partitioner;
-
   /**
    * @brief Swap the local contents of a map.
    *
@@ -596,8 +606,11 @@ class map
 
  private:
   ygm::comm&                       m_comm;
+  typename ygm::ygm_ptr<self_type> pthis;
   local_container_type             m_local_map;
   mapped_type                      m_default_value;
-  typename ygm::ygm_ptr<self_type> pthis;
+
+ public:
+  detail::hash_partitioner<detail::hash<key_type>> partitioner;
 };
 }  // namespace ygm::container

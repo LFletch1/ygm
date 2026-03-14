@@ -12,12 +12,13 @@
 #include <initializer_list>
 #include <ygm/container/container_traits.hpp>
 #include <ygm/container/detail/base_async_insert.hpp>
+#include <ygm/container/detail/base_contains.hpp>
 #include <ygm/container/detail/base_count.hpp>
 #include <ygm/container/detail/base_iteration.hpp>
 #include <ygm/container/detail/base_iterators.hpp>
 #include <ygm/container/detail/base_misc.hpp>
 #include <ygm/container/detail/round_robin_partitioner.hpp>
-#include <ygm/random.hpp>
+#include <ygm/random/random.hpp>
 
 namespace ygm::container {
 
@@ -28,11 +29,12 @@ namespace ygm::container {
  */
 template <typename Item>
 class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
+            public detail::base_contains<bag<Item>, std::tuple<Item>>,
             public detail::base_count<bag<Item>, std::tuple<Item>>,
             public detail::base_misc<bag<Item>, std::tuple<Item>>,
             public detail::base_iterators<bag<Item>>,
             public detail::base_iteration_value<bag<Item>, std::tuple<Item>> {
-  friend class detail::base_misc<bag<Item>, std::tuple<Item>>;
+  friend struct detail::base_misc<bag<Item>, std::tuple<Item>>;
 
   using block_32k_option_t = boost::container::deque_options<
       boost::container::block_size<32 * 1024u>>::type;
@@ -85,9 +87,9 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
    * @param cont STL container containing values to put in bag
    */
   template <typename STLContainer>
-  bag(ygm::comm          &comm,
-      const STLContainer &cont) requires detail::STLContainer<STLContainer> &&
-      std::convertible_to<typename STLContainer::value_type, Item>
+  bag(ygm::comm &comm, const STLContainer &cont)
+    requires detail::STLContainer<STLContainer> &&
+                 std::convertible_to<typename STLContainer::value_type, Item>
       : m_comm(comm), pthis(this), partitioner(comm) {
     m_comm.log(log_level::info, "Creating ygm::container::bag");
     pthis.check(m_comm);
@@ -108,9 +110,9 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
    * put in the bag
    */
   template <typename YGMContainer>
-  bag(ygm::comm          &comm,
-      const YGMContainer &yc) requires detail::HasForAll<YGMContainer> &&
-      detail::SingleItemTuple<typename YGMContainer::for_all_args>
+  bag(ygm::comm &comm, const YGMContainer &yc)
+    requires detail::HasForAll<YGMContainer> &&
+                 detail::SingleItemTuple<typename YGMContainer::for_all_args>
       : m_comm(comm), pthis(this), partitioner(comm) {
     m_comm.log(log_level::info, "Creating ygm::container::bag");
     pthis.check(m_comm);
@@ -128,8 +130,8 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
   bag(const self_type &other)
       : m_comm(other.comm()),
         pthis(this),
-        partitioner(other.comm()),
-        m_local_bag(other.m_local_bag) {
+        m_local_bag(other.m_local_bag),
+        partitioner(other.comm()) {
     m_comm.log(log_level::info, "Creating ygm::container::bag");
     pthis.check(m_comm);
   }
@@ -137,8 +139,8 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
   bag(self_type &&other) noexcept
       : m_comm(other.comm()),
         pthis(this),
-        partitioner(other.comm()),
-        m_local_bag(std::move(other.m_local_bag)) {
+        m_local_bag(std::move(other.m_local_bag)),
+        partitioner(other.comm()) {
     m_comm.log(log_level::info, "Creating ygm::container::bag");
     pthis.check(m_comm);
   }
@@ -260,6 +262,17 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
   }
 
   /**
+   * @brief Check if a value exists locally
+   *
+   * @param val Value to check for
+   * @return True if value exists locally, false otherwise
+   */
+  bool local_contains(const value_type &val) const {
+    return std::find(m_local_bag.begin(), m_local_bag.end(), val) !=
+           m_local_bag.end();
+  }
+
+  /**
    * @brief Execute a functor on every locally-held item
    *
    * @tparam Function functor type
@@ -328,8 +341,7 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
     auto global_size = this->size();  // includes barrier
 
     // Find current rank's prefix val and desired target size
-    size_t prefix_val  = ygm::prefix_sum(local_size(), m_comm);
-    size_t target_size = std::ceil((global_size * 1.0) / m_comm.size());
+    size_t prefix_val = ygm::prefix_sum(local_size(), m_comm);
 
     // Init to_send array where index is dest and value is the num to send
     // int to_send[m_comm.size()] = {0};
@@ -352,7 +364,7 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
                           small_block_size;
       }
 
-      if (target_rank != m_comm.rank()) {
+      if (target_rank != size_t(m_comm.rank())) {
         to_send[target_rank]++;
       }
     }
@@ -382,7 +394,7 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
    * @brief Shuffle elements held locally with a default random number generator
    */
   void local_shuffle() {
-    ygm::default_random_engine<> r(m_comm, std::random_device()());
+    ygm::random::default_random_engine<> r(m_comm, std::random_device()());
     local_shuffle(r);
   }
 
@@ -413,7 +425,7 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
    * generator
    */
   void global_shuffle() {
-    ygm::default_random_engine<> r(m_comm, std::random_device()());
+    ygm::random::default_random_engine<> r(m_comm, std::random_device()());
     global_shuffle(r);
   }
 
@@ -421,10 +433,8 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
   //   template <typename Function∏>
   //   void local_for_all_pair_types(Function fn);
 
-  detail::round_robin_partitioner partitioner;
-
  private:
-  std::vector<value_type> local_pop(int n) {
+  std::vector<value_type> local_pop(uint32_t n) {
     YGM_ASSERT_RELEASE(n <= local_size());
 
     size_t                  new_size  = local_size() - n;
@@ -443,8 +453,11 @@ class bag : public detail::base_async_insert_value<bag<Item>, std::tuple<Item>>,
   void local_swap(self_type &other) { m_local_bag.swap(other.m_local_bag); }
 
   ygm::comm                       &m_comm;
-  local_container_type             m_local_bag;
   typename ygm::ygm_ptr<self_type> pthis;
+  local_container_type             m_local_bag;
+
+ public:
+  detail::round_robin_partitioner partitioner;
 };
 
 }  // namespace ygm::container

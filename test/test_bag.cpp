@@ -10,7 +10,7 @@
 #include <vector>
 #include <ygm/comm.hpp>
 #include <ygm/container/bag.hpp>
-#include <ygm/random.hpp>
+#include <ygm/random/random.hpp>
 
 int main(int argc, char** argv) {
   ygm::comm world(&argc, &argv);
@@ -39,6 +39,12 @@ int main(int argc, char** argv) {
     YGM_ASSERT_RELEASE(bbag.count("apple") == 1);
     YGM_ASSERT_RELEASE(bbag.count("red") == 1);
     YGM_ASSERT_RELEASE(bbag.size() == 3);
+
+    // test contains.
+    YGM_ASSERT_RELEASE(bbag.contains("dog"));
+    YGM_ASSERT_RELEASE(bbag.contains("apple"));
+    YGM_ASSERT_RELEASE(bbag.contains("red"));
+    YGM_ASSERT_RELEASE(!bbag.contains("blue"));
 
     for (auto& value : bbag) {
       world.cout(value);
@@ -158,6 +164,12 @@ int main(int argc, char** argv) {
     YGM_ASSERT_RELEASE(bbag.count("apple") == (size_t)world.size());
     YGM_ASSERT_RELEASE(bbag.count("red") == (size_t)world.size());
 
+    // test contains
+    YGM_ASSERT_RELEASE(bbag.contains("dog"));
+    YGM_ASSERT_RELEASE(bbag.contains("apple"));
+    YGM_ASSERT_RELEASE(bbag.contains("red"));
+    YGM_ASSERT_RELEASE(!bbag.contains("blue"));
+
     {
       std::vector<std::string> all_data;
       bbag.gather(all_data, 0);
@@ -205,18 +217,18 @@ int main(int argc, char** argv) {
       }
     }
     int                          seed = 100;
-    ygm::default_random_engine<> rng1 =
-        ygm::default_random_engine<>(world, seed);
+    ygm::random::default_random_engine<> rng1 =
+        ygm::random::default_random_engine<>(world, seed);
     bbag.local_shuffle(rng1);
 
-    ygm::default_random_engine<> rng2 =
-        ygm::default_random_engine<>(world, seed);
+    ygm::random::default_random_engine<> rng2 =
+        ygm::random::default_random_engine<>(world, seed);
     bbag.global_shuffle(rng2);
 
     bbag.local_shuffle();
     bbag.global_shuffle();
 
-    YGM_ASSERT_RELEASE(bbag.size() == num_of_items);
+    YGM_ASSERT_RELEASE(bbag.size() == size_t(num_of_items));
 
     std::vector<int> bag_content;
     bbag.gather(bag_content, 0);
@@ -240,7 +252,7 @@ int main(int argc, char** argv) {
       bbag.async_insert("red");
     }
     int count{0};
-    bbag.for_all([&count](std::string& mstr) { ++count; });
+    bbag.for_all([&count]([[maybe_unused]] std::string& mstr) { ++count; });
     int global_count = ygm::sum(count, world);
     world.barrier();
     YGM_ASSERT_RELEASE(global_count == 3);
@@ -299,13 +311,12 @@ int main(int argc, char** argv) {
     if (world.rank0()) bbag.async_insert("middle", world.size() / 2);
     bbag.rebalance();
 
-    size_t target_size      = std::ceil((bbag.size() * 1.0) / world.size());
     size_t remainder        = bbag.size() % world.size();
     size_t small_block_size = bbag.size() / world.size();
     size_t large_block_size =
         bbag.size() / world.size() + (bbag.size() % world.size() > 0);
 
-    if (world.rank() < remainder) {
+    if (size_t(world.rank()) < remainder) {
       YGM_ASSERT_RELEASE(bbag.local_size() == large_block_size);
     } else {
       YGM_ASSERT_RELEASE(bbag.local_size() == small_block_size);
@@ -381,7 +392,8 @@ int main(int argc, char** argv) {
 
     world.barrier();
     for (int bag_index = 0; bag_index < num_bags; ++bag_index) {
-      YGM_ASSERT_RELEASE(vec_bags[bag_index].size() == world.size() * 2);
+      YGM_ASSERT_RELEASE(vec_bags[bag_index].size() ==
+                         size_t(world.size() * 2));
     }
   }
 }
